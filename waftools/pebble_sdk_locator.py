@@ -77,12 +77,20 @@ def _find_sdk(repo_root):
         return None
 
     home = Path.home()
+    dev_pebble = home / "dev" / "pebble"
     opt = Path("/opt")
 
-    # Search order per spec: home versioned -> home unversioned -> opt versioned -> opt unversioned.
+    # Search order:
+    #   home versioned -> home unversioned -> dev versioned -> dev unversioned
+    #   -> opt versioned -> opt unversioned.
     for v, d in _versioned_candidates(home, min_ver):
         return (v, d)
     d = _unversioned_candidate(home)
+    if d is not None:
+        return (None, d)
+    for v, d in _versioned_candidates(dev_pebble, min_ver):
+        return (v, d)
+    d = _unversioned_candidate(dev_pebble)
     if d is not None:
         return (None, d)
     for v, d in _versioned_candidates(opt, min_ver):
