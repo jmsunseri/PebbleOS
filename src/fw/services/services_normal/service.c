@@ -6,30 +6,25 @@
 #include <string.h>
 
 #include "applib/event_service_client.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "kernel/events.h"
 #include "process_management/app_install_manager.h" // FIXME: This should really be in services/
-#include "process_management/launcher_app_message.h" // FIXME: This should really be in services/
 #include "pbl/services/activity/activity.h"
 #include "pbl/services/alarms/alarm.h"
 #include "pbl/services/app_cache.h"
-#include "pbl/services/app_fetch_endpoint.h"
 #include "pbl/services/app_glances/app_glance_service.h"
 #include "pbl/services/blob_db/api.h"
 #include "pbl/services/blob_db/endpoint_private.h"
 #include "pbl/services/data_logging/data_logging_service.h"
 #include "pbl/services/filesystem/pfs.h"
 #include "pbl/services/protobuf_log/protobuf_log.h"
-#include "pbl/services/music_endpoint.h"
 #include "pbl/services/music_internal.h"
 #include "pbl/services/notifications/alerts_private.h"
 #include "pbl/services/notifications/notifications.h"
 #include "pbl/services/persist.h"
 #include "pbl/services/phone_call.h"
 #include "pbl/services/process_management/app_order_storage.h"
-#include "pbl/services/powermode_service.h"
 #include "pbl/services/send_text_service.h"
-#include "shell/prefs.h"
 #include "pbl/services/speaker/speaker_service.h"
 #include "pbl/services/stationary.h"
 #include "pbl/services/timeline/event.h"
@@ -44,7 +39,7 @@
 #include "pbl/services/activity/activity.h"
 #include "pbl/services/voice/voice.h"
 
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 // Minimum valid time: January 1, 2020 00:00:00 UTC (timestamp: 1577836800)
 // This represents the minimum time we consider valid for activity initialization
@@ -130,11 +125,6 @@ void services_normal_init(void) {
 #endif
 
   app_glance_service_init();
-
-  powermode_service_init();
-#ifndef CONFIG_SHELL_SDK
-  powermode_service_set_enabled(shell_prefs_get_power_mode() == PowerMode_LowPower);
-#endif
 }
 
 static struct ServiceRunLevelSetting s_runlevel_settings[] = {

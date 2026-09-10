@@ -21,9 +21,9 @@
 #include "pbl/services/timeline/swap_layer.h"
 #include "pbl/services/timeline/timeline_resources.h"
 #include "shell/normal/watchface.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #include <string.h>
 

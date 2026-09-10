@@ -13,11 +13,11 @@
 #include "pbl/services/activity/activity.h"
 
 #include "applib/data_logging.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "pbl/services/data_logging/data_logging_service.h"
-#include "system/logging.h"
-#include "util/attributes.h"
-#include "util/size.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/attributes.h"
+#include "pbl/util/size.h"
 
 #include "stubs_passert.h"
 #include "stubs_logging.h"
@@ -677,7 +677,7 @@ void test_protobuf_log__measurements_auto_flush(void) {
     values[i] = i * 3;
   }
 
-  // Create a session with an artifically small buffer size which will cause it to flush
+  // Create a session with an artificially small buffer size which will cause it to flush
   // automatically
   time_t start_time = rtc_get_time();
   ProtobufLogConfig log_config = {

@@ -7,9 +7,6 @@
 [submodule "third_party/hal_nordic/nrfx"]
 	path = third_party/hal_nordic/nrfx
 	url = https://github.com/NordicSemiconductor/nrfx
-[submodule "third_party/freertos/FreeRTOS-Kernel"]
-	path = third_party/freertos/FreeRTOS-Kernel
-	url = https://github.com/coredevices/FreeRTOS-Kernel
 [submodule "third_party/nanopb/nanopb"]
 	path = third_party/nanopb/nanopb
 	url = https://github.com/nanopb/nanopb
@@ -19,9 +16,6 @@
 [submodule "third_party/hal_sifli/SiFli-SDK"]
 	path = third_party/hal_sifli/SiFli-SDK
 	url = https://github.com/coredevices/SiFli-SDK.git
-[submodule "third_party/memfault/memfault-firmware-sdk"]
-	path = third_party/memfault/memfault-firmware-sdk
-	url = https://github.com/memfault/memfault-firmware-sdk.git
 [submodule "third_party/qr_code_generator/QR-Code-generator"]
 	path = third_party/qr_code_generator/QR-Code-generator
 	url = https://github.com/nayuki/QR-Code-generator
@@ -37,3 +31,9 @@
 [submodule "third_party/moddable/moddable"]
 	path = third_party/moddable/moddable
 	url = https://github.com/coredevices/moddable.git
+[submodule "third_party/picolibc"]
+	path = third_party/picolibc
+	url = https://github.com/picolibc/picolibc.git
+[submodule "third_party/mbedtls/mbedtls"]
+	path = third_party/mbedtls/mbedtls
+	url = https://github.com/Mbed-TLS/mbedtls.git

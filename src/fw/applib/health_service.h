@@ -5,7 +5,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "drivers/ambient_light.h"
+#include <pbl/drivers/ambient_light.h>
 #include "pbl/services/hrm/hrm_manager.h"
 #include "util/time/time.h"
 
@@ -315,7 +315,7 @@ HealthServiceAccessibilityMask health_service_metric_accessible(
 //! @param time_start Earliest UTC time you are interested in.
 //! @param time_end Latest UTC time you are interested in.
 //! @param scope \ref HealthServiceTimeScope value describing how the average should be computed.
-//! @return A \HealthServiceAccessibilityMask value decribing whether averaged data is available.
+//! @return A \ref HealthServiceAccessibilityMask value describing whether averaged data is available.
 HealthServiceAccessibilityMask health_service_metric_averaged_accessible(
     HealthMetric metric, time_t time_start, time_t time_end, HealthServiceTimeScope scope);
 
@@ -329,7 +329,7 @@ HealthServiceAccessibilityMask health_service_metric_averaged_accessible(
 //! @param time_end Latest UTC time you are interested in.
 //! @param aggregation The aggregation to perform
 //! @param scope \ref HealthServiceTimeScope value describing how the average should be computed.
-//! @return A \HealthServiceAccessibilityMask value decribing whether averaged data is available.
+//! @return A \ref HealthServiceAccessibilityMask value describing whether averaged data is available.
 HealthServiceAccessibilityMask health_service_metric_aggregate_averaged_accessible(
     HealthMetric metric, time_t time_start, time_t time_end, HealthAggregation aggregation,
     HealthServiceTimeScope scope);
@@ -362,11 +362,13 @@ typedef enum {
   HealthEventMetricAlert = 3,
   //! Value of \ref HealthMetricHeartRateBPM or \ref HealthMetricHeartRateRawBPM has changed.
   HealthEventHeartRateUpdate = 4,
+  //! A new HRV peak-to-peak interval reading is available.
+  HealthEventHRVUpdate = 5,
 } HealthEventType;
 
 //! Developer-supplied event handler, called when a health-related event occurs after subscribing
 //! via \ref health_service_events_subscribe();
-//! @param event The type of health-related event that occured.
+//! @param event The type of health-related event that occurred.
 //! @param context The developer-supplied context pointer.
 typedef void (*HealthEventHandler)(HealthEventType event, void *context);
 
@@ -382,6 +384,22 @@ bool health_service_events_subscribe(HealthEventHandler handler, void *context);
 //! Unsubscribe from HealthService events.
 //! @return `true` on success, `false` on failure.
 bool health_service_events_unsubscribe(void);
+
+//! Get the most recent HRV peak-to-peak interval in milliseconds. The value is captured from
+//! \ref HealthEventHRVUpdate events, so it only updates while this app is subscribed via
+//! \ref health_service_events_subscribe() and holds an HRV sample period.
+//! @return PPI in ms, or 0 if no reading available.
+uint16_t health_service_peek_hrv_ppi_ms(void);
+
+//! Request HRV (peak-to-peak interval) sampling. While any app holds an HRV sample period, the
+//! sensor collects HRV alongside heart rate and HealthEventHRVUpdate events are delivered to
+//! health service subscribers.
+//! The HRV and heart rate sample periods (\ref health_service_set_heart_rate_sample_period)
+//! share the app's single sensor subscription: both may be active at once, the sensor is driven
+//! at the shorter of the two periods, and setting one period to 0 clears only that request.
+//! @param interval_sec desired sampling interval in seconds; 0 unsubscribes.
+//! @return true on success.
+bool health_service_set_hrv_sample_period(uint16_t interval_sec);
 
 //! Set the desired sampling period for heart rate readings. Normally, the system will sample the
 //! heart rate using a sampling period that is automatically chosen to provide useful information
@@ -430,7 +448,7 @@ uint16_t health_service_get_heart_rate_sample_period_expiration_sec(void);
 //! \endcode
 //!
 //! In the current implementation, only one alert per metric can be registered at a time. Future
-//! implementations may support two or more simulataneous alert registrations per metric. To change
+//! implementations may support two or more simultaneous alert registrations per metric. To change
 //! the alert threshold in the current implementation, cancel the original registration
 //! using `health_service_cancel_metric_alert` before registering the new threshold.
 //! @param metric Which \ref HealthMetric to query.
@@ -532,12 +550,19 @@ typedef struct {
 } HealthEventHeartRateUpdateData;
 
 //! @internal
+typedef struct {
+  uint16_t ppi_ms;
+  HRMQuality quality:8;
+} HealthEventHRVUpdateData;
+
+//! @internal
 typedef struct  {
   union {
     HealthEventMovementUpdateData movement_update;
     HealthEventSleepUpdateData sleep_update;
     HealthEventSignificantUpdateData significant_update;
     HealthEventHeartRateUpdateData heart_rate_update;
+    HealthEventHRVUpdateData hrv_update;
   };
 } HealthEventData;
 

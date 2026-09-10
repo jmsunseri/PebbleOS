@@ -5,7 +5,7 @@
 
 #include "activity.h"
 #include "pbl/services/filesystem/pfs.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 
 #define ACTIVITY_INSIGHTS_SETTINGS_SLEEP_REWARD "sleep_reward"
 #define ACTIVITY_INSIGHTS_SETTINGS_SLEEP_SUMMARY "sleep_summary"
@@ -41,7 +41,7 @@ typedef struct PACKED ActivitySummarySettings {
   int8_t below_avg_threshold;           //!< Values less than this are counted as above avg
                                         //!< In relation to 100% (eg 93% would be -7)
   int8_t fail_threshold;                //!< Values less than this are counted as fail
-                                        //!< In releastion to 100% (e.g. 55% would be -45)
+                                        //!< In relation to 100% (e.g. 55% would be -45)
 
   union {
     struct PACKED {
@@ -90,15 +90,15 @@ typedef struct PACKED ActivityInsightSettings {
 
 
 //! Read a setting from the insights settings
-//! @param insights_name the name of the insight for which to get a setting
-//! @param[out] settings out an ActivityInsightSettings struct to which the data will be written
+//! @param insight_name the name of the insight for which to get a setting
+//! @param[out] settings_out an ActivityInsightSettings struct to which the data will be written
 //! @returns true if the setting was found and the data is valid, false otherwise
 //! @note if this function returns false, settings_out will be zeroed out.
 bool activity_insights_settings_read(const char *insight_name,
                                      ActivityInsightSettings *settings_out);
 
 //! Write a setting to the insights settings (used for testing)
-//! @param insights_name the name of the insight for which to get a setting
+//! @param insight_name the name of the insight for which to get a setting
 //! @param settings an ActivityInsightSettings struct which contains the data to be written
 //! @returns true if the setting was successfully saved
 bool activity_insights_settings_write(const char *insight_name,

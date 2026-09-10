@@ -4,20 +4,20 @@
 #pragma once
 
 #include "action_menu_window.h"
-#include "click.h"
-#include "inverter_layer.h"
 #include "layer.h"
 #include "menu_layer.h"
-#include "scroll_layer.h"
 
 #include "applib/graphics/graphics.h"
 #include "applib/ui/animation.h"
 #include "applib/ui/window_private.h"
 #include "system/passert.h"
 
-#include <string.h>
-
 typedef void (*ActionMenuLayerCallback)(const ActionMenuItem *item, void *context);
+
+typedef struct {
+  ActionMenuLayerCallback select;
+  ActionMenuLayerCallback selection_changed;
+} ActionMenuLayerCallbacks;
 
 typedef struct {
   ActionMenuAlign align;
@@ -41,7 +41,7 @@ typedef struct {
   MenuLayer menu_layer;
   int selected_index;
   unsigned separator_index;
-  ActionMenuLayerCallback cb;
+  ActionMenuLayerCallbacks callbacks;
 
   const ActionMenuItem* items;
   int num_items;
@@ -61,6 +61,12 @@ ActionMenuLayer *action_menu_layer_create(GRect frame);
 void action_menu_layer_set_callback(ActionMenuLayer *aml,
                                     ActionMenuLayerCallback cb,
                                     void *context);
+
+void action_menu_layer_set_callbacks(ActionMenuLayer *aml,
+                                     ActionMenuLayerCallbacks callbacks,
+                                     void *context);
+
+void action_menu_layer_notify_selection_changed(ActionMenuLayer *aml);
 
 void action_menu_layer_set_align(ActionMenuLayer *aml,
                                  ActionMenuAlign align);

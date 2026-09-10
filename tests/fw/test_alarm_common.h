@@ -7,7 +7,7 @@
 #include "pbl/services/alarms/alarm.h"
 #include "pbl/services/alarms/alarm_pin.h"
 
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "resource/timeline_resource_ids.auto.h"
 #include "pbl/services/cron.h"
 #include "pbl/services/new_timer/new_timer.h"
@@ -15,7 +15,7 @@
 #include "pbl/services/filesystem/pfs.h"
 #include "pbl/services/settings/settings_file.h"
 #include "pbl/services/timeline/item.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -37,7 +37,6 @@
 #include "stubs_passert.h"
 #include "stubs_pebble_tasks.h"
 #include "stubs_prompt.h"
-#include "stubs_queue.h"
 #include "stubs_rand_ptr.h"
 #include "stubs_regular_timer.h"
 #include "stubs_sleep.h"
@@ -102,7 +101,7 @@ static int s_current_day = 0;
 static const int s_thursday = 1426118400;
 // Friday March 13, 2015, 00:00 UTC
 static const int s_friday = 1426204800;
-// Saturaday March 14, 2015, 00:00 UTC
+// Saturday March 14, 2015, 00:00 UTC
 static const int s_saturday = 1426291200;
 // Sunday March 15, 2015, 00:00 UTC
 static const int s_sunday = 1426377600;
@@ -128,7 +127,7 @@ static int s_num_alarms_fired = 0;
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //! Fakes
 
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
 void prv_timer_kernel_bg_callback(void *data);
 

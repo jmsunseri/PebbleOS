@@ -4,16 +4,14 @@
 #include "resource_storage.h"
 #include "resource_storage_impl.h"
 
-#include <stdio.h>
 #include <string.h>
 
 #include "pbl/services/filesystem/app_file.h"
 #include "system/hexdump.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "system/version.h"
-#include "util/math.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 static const ResourceStoreImplementation *s_resource_store_impls[] = {
 #define RESOURCE_IMPL(impl) &impl,
@@ -293,9 +291,9 @@ bool resource_storage_generic_check(ResAppNum app_num, uint32_t resource_id,
   ResourceManifest manifest;
   prv_get_manifest(entry, &manifest);
   if (expected_version && !resource_version_matches(&manifest.version, expected_version)) {
-    PBL_LOG_WRN("expected version <%#010"PRIx32", %"PRIu32">,",
+    PBL_LOG_DBG("expected version <%#010"PRIx32", %"PRIu32">,",
             expected_version->crc, expected_version->timestamp);
-    PBL_LOG_WRN("got <%#010"PRIx32", %"PRIu32">,",
+    PBL_LOG_DBG("got <%#010"PRIx32", %"PRIu32">,",
             manifest.version.crc, manifest.version.timestamp);
     return false;
   }

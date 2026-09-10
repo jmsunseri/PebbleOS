@@ -1,14 +1,14 @@
 /* SPDX-FileCopyrightText: 2025 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "gh3x2x.h"
+#include <pbl/drivers/hrm/gh3x2x.h>
 
-#include "drivers/hrm.h"
+#include <pbl/drivers/hrm.h>
 #include "board/board.h"
-#include "kernel/util/sleep.h"
-#include "system/logging.h"
+#include "pbl/services/analytics/analytics.h"
+#include <pbl/logging/logging.h>
 
-#ifdef HRM_USE_GH3X2X
+#ifdef CONFIG_GH3X2X_ALGO
 #include "math.h"
 #include "kernel/util/delay.h"
 #include "kernel/events.h"
@@ -18,7 +18,7 @@
 #include "gh_demo.h"
 #include "gh_demo_inner.h"
 #include "gh3x2x_demo_mp.h"
-#endif // HRM_USE_GH3X2X
+#endif // CONFIG_GH3X2X_ALGO
 
 PBL_LOG_MODULE_DEFINE(driver_hrm_gh3x2x, CONFIG_DRIVER_HRM_LOG_LEVEL);
 
@@ -28,11 +28,14 @@ void gh3026_reset_pin_ctrl(uint8_t pin_level) {
 #endif
 }
 
-#ifdef HRM_USE_GH3X2X
+#ifdef CONFIG_GH3X2X_ALGO
 
 #define GH3X2X_LOG_ENABLE 0
 #define GH3X2X_FIFO_WATERMARK_CONFIG 80
 #define GH3X2X_HR_SAMPLING_RATE 25
+#define GH3X2X_HRV_SAMPLING_RATE 100
+// The Goodix HRV algorithm reports at most 4 RR intervals per result
+#define GH3X2X_HRV_MAX_RRI_PER_RESULT 4
 
 static volatile uint32_t s_hrm_int_flag = false;
 static volatile uint32_t s_hrm_timer_flag = false;
@@ -164,6 +167,43 @@ void gh3x2x_spo2_result_report(uint8_t pct, uint8_t quality) {
 
   hrm_manager_new_data_cb(&hrm_data);
 }
+#ifdef CONFIG_HRM_HRV
+void gh3x2x_hrv_result_report(const int32_t *rri, int32_t confidence, int32_t valid_num) {
+  PBL_LOG_DBG("GH3X2X HRV n=%" PRId32 " (conf=%" PRId32 ", wear=%u)",
+              valid_num, confidence, HRM->state->is_wear);
+  if (!HRM->state->is_wear) {
+    HRMData hrm_data = {0};
+    hrm_data.features = HRMFeature_HRV;
+    hrm_data.hrv_quality = HRMQuality_OffWrist;
+    hrm_manager_new_data_cb(&hrm_data);
+    return;
+  }
+  if (valid_num > GH3X2X_HRV_MAX_RRI_PER_RESULT) {
+    valid_num = GH3X2X_HRV_MAX_RRI_PER_RESULT;
+  }
+  for (int32_t i = 0; i < valid_num; i++) {
+    if ((rri[i] <= 0) || (rri[i] > UINT16_MAX)) {
+      // Not a plausible RR interval; don't let the uint16_t cast wrap it into one
+      continue;
+    }
+    HRMData hrm_data = {0};
+    hrm_data.features = HRMFeature_HRV;
+    hrm_data.hrv_ppi_ms = (uint16_t)rri[i];
+    if (confidence >= 98) {
+      hrm_data.hrv_quality = HRMQuality_Excellent;
+    } else if (confidence >= 90) {
+      hrm_data.hrv_quality = HRMQuality_Good;
+    } else if (confidence >= 80) {
+      hrm_data.hrv_quality = HRMQuality_Acceptable;
+    } else if (confidence >= 70) {
+      hrm_data.hrv_quality = HRMQuality_Poor;
+    } else {
+      hrm_data.hrv_quality = HRMQuality_Worst;
+    }
+    hrm_manager_new_data_cb(&hrm_data);
+  }
+}
+#endif
 
 void gh3x2x_wear_evt_notify(bool is_wear) {
   PBL_LOG_DBG("GH3X2X wear state: %d", is_wear);
@@ -427,17 +467,18 @@ void gh3x2x_set_work_mode(int32_t mode) {
 }
 #endif // CONFIG_MFG
 
-#endif // HRM_USE_GH3X2X
+#endif // CONFIG_GH3X2X_ALGO
 
 // HRM interface
 
 void hrm_init(HRMDevice *dev) {
-#ifdef HRM_USE_GH3X2X
+#ifdef CONFIG_GH3X2X_ALGO
   int ret;
 
   ret = Gh3x2xDemoInit();
   if (ret != 0) {
     PBL_LOG_ERR("GH3X2X failed to initialize");
+    PBL_ANALYTICS_ADD(drv_init_fail_flags, PBL_ANALYTICS_DRV_INIT_FAIL_HRM);
     return;
   }
 #else
@@ -449,8 +490,8 @@ void hrm_init(HRMDevice *dev) {
   dev->state->initialized = true;
 }
 
-bool hrm_enable(HRMDevice *dev) {
-#ifdef HRM_USE_GH3X2X
+bool hrm_enable(HRMDevice *dev, HRMFeature features) {
+#ifdef CONFIG_GH3X2X_ALGO
   if (!dev->state->initialized) {
     return false;
   }
@@ -462,9 +503,30 @@ bool hrm_enable(HRMDevice *dev) {
   dev->state->work_mode = GH3X2X_FUNCTION_HR | GH3X2X_FUNCTION_SPO2 | GH3X2X_FUNCTION_SOFT_ADT_IR;
 #endif
 
+#ifdef CONFIG_HRM_HRV
+  if (features & HRMFeature_HRV) {
+    dev->state->work_mode |= GH3X2X_FUNCTION_HRV;
+    // The shipped register config maps PPG channels for HR/SpO2/ADT only.
+    // Mirror the HR channel map onto the HRV function so it receives frames.
+    const STGh3x2xFrameInfo *hr_info = g_pstGh3x2xFrameInfo[GH3X2X_FUNC_OFFSET_HR];
+    const STGh3x2xFrameInfo *hrv_info = g_pstGh3x2xFrameInfo[GH3X2X_FUNC_OFFSET_HRV];
+    GU8 hr_chnl_num = hr_info->pstFunctionInfo->uchChnlNum;
+    GH3x2xSetFunctionChnlNum(hrv_info, hr_chnl_num);
+    for (GU8 i = 0; i < hr_chnl_num; i++) {
+      GH3x2xSetFunctionChnlMap(hrv_info, i, hr_info->pchChnlMap[i]);
+    }
+    GH3x2xCalFunctionSlotBit(hrv_info);
+  }
+#endif
+
   GH3X2X_FifoWatermarkThrConfig(GH3X2X_FIFO_WATERMARK_CONFIG);
   GH3X2X_SetSoftEvent(GH3X2X_SOFT_EVENT_NEED_FORCE_READ_FIFO);
   Gh3x2xDemoFunctionSampleRateSet(GH3X2X_FUNCTION_HR, GH3X2X_HR_SAMPLING_RATE);
+#ifdef CONFIG_HRM_HRV
+  if (features & HRMFeature_HRV) {
+    Gh3x2xDemoFunctionSampleRateSet(GH3X2X_FUNCTION_HRV, GH3X2X_HRV_SAMPLING_RATE);
+  }
+#endif
   Gh3x2xDemoStartSampling(dev->state->work_mode);
 
   dev->state->enabled = true;
@@ -475,7 +537,7 @@ bool hrm_enable(HRMDevice *dev) {
 }
 
 void hrm_disable(HRMDevice *dev) {
-#ifdef HRM_USE_GH3X2X
+#ifdef CONFIG_GH3X2X_ALGO
   if (!dev->state->initialized) {
     return;
   }

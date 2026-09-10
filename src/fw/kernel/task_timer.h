@@ -3,14 +3,10 @@
 
 #pragma once
 
-#include "util/list.h"
-#include "os/mutex.h"
+#include "pbl/kernel/mutex.h"
 
 #include <stdbool.h>
 #include <stdint.h>
-
-#include "FreeRTOS.h"
-#include "semphr.h"
 
 //! task_timer.h
 //!
@@ -41,30 +37,32 @@ typedef void (*TaskTimerCallback)(void *data);
 #define TIMER_START_FLAG_FAIL_IF_EXECUTING  0x02
 #define TIMER_START_FLAG_FAIL_IF_SCHEDULED  0x04
 
-
 //! Creates a new timer object. This timer will start out in the stopped state.
 //! @return the non-zero timer id or TIMER_INVALID_ID if OOM
 TaskTimerID task_timer_create(TaskTimerManager *manager);
 
 //! Schedule an existing timer to execute in timeout_ms. If the timer was already started, it will
 //! be rescheduled for the new time.
+//! @param[in] manager The manager that owns the timer
 //! @param[in] timer ID
 //! @param[in] timeout_ms timeout in milliseconds
 //! @param[in] cb pointer to the user's callback procedure
 //! @param[in] cb_data reference data for the callback
 //! @param[in] flags one or more TIMER_START_FLAG_.* flags
-//! @return True if succesful, false if timer was not rescheduled. Note that it will never return
+//! @return True if successful, false if timer was not rescheduled. Note that it will never return
 //!     false if none of the FAIL_IF_* flags are set.
 bool task_timer_start(TaskTimerManager *manager, TaskTimerID timer, uint32_t timeout_ms,
                       TaskTimerCallback cb, void *cb_data, uint32_t flags);
 
 //! Stop a timer. For repeating timers, even if this method returns false (callback is currently
 //! executing) the timer will not run again. Safe to call on timers that aren't currently started.
+//! @param[in] manager The manager that owns the timer
 //! @param[in] timer ID
 //! @return False if timer's callback is current executing, true if not.
 bool task_timer_stop(TaskTimerManager *manager, TaskTimerID timer);
 
 //! Get scheduled status of a timer
+//! @param[in] manager The manager that owns the timer
 //! @param[in] timer ID
 //! @param[out] expire_ms_p if not NULL, the number of milliseconds until this timer will fire is
 //!                         returned in *expire_ms_p. If the timer is not scheduled (return value
@@ -73,5 +71,6 @@ bool task_timer_stop(TaskTimerManager *manager, TaskTimerID timer);
 bool task_timer_scheduled(TaskTimerManager *manager, TaskTimerID timer, uint32_t *expire_ms_p);
 
 //! Delete a timer
+//! @param[in] manager The manager that owns the timer
 //! @param[in] timer ID
 void task_timer_delete(TaskTimerManager *manager, TaskTimerID timer);

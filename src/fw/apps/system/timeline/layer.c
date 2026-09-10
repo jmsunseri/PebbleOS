@@ -11,7 +11,6 @@
 #include "applib/graphics/graphics.h"
 #include "applib/preferred_content_size.h"
 #include "applib/ui/kino/kino_layer.h"
-#include "applib/ui/kino/kino_reel/scale_segmented.h"
 #include "applib/ui/property_animation.h"
 #include "applib/ui/window.h"
 #include "kernel/pbl_malloc.h"
@@ -21,19 +20,15 @@
 #include "process_state/app_state/app_state.h"
 #include "resource/resource_ids.auto.h"
 #include "pbl/services/clock.h"
-#include "pbl/services/i18n/i18n.h"
-#include "pbl/services/blob_db/pin_db.h"
-#include "pbl/services/timeline/attribute.h"
 #include "pbl/services/timeline/layout_layer.h"
 #include "pbl/services/timeline/timeline_layout.h"
 #include "pbl/services/timeline/timeline_resources.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/math.h"
-#include "util/size.h"
-#include "util/string.h"
-#include "util/struct.h"
-#include "util/trig.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
+#include "pbl/util/struct.h"
+#include "pbl/util/trig.h"
 
 #include <stdint.h>
 #include <time.h>

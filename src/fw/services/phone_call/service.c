@@ -4,10 +4,8 @@
 #include "pbl/services/phone_call.h"
 
 #include "applib/event_service_client.h"
-#include "applib/ui/vibes.h"
 #include "comm/ble/kernel_le_client/ancs/ancs.h"
 #include "comm/ble/kernel_le_client/ancs/ancs_types.h"
-#include "kernel/pbl_malloc.h"
 #include "popups/phone_ui.h"
 #include "pbl/services/analytics/analytics.h"
 #include "pbl/services/comm_session/session.h"
@@ -15,7 +13,7 @@
 #include "pbl/services/system_task.h"
 #include "pbl/services/notifications/alerts.h"
 #include "pbl/services/notifications/ancs/ancs_phone_call.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
 PBL_LOG_MODULE_DEFINE(service_phone_call, CONFIG_SERVICE_PHONE_CALL_LOG_LEVEL);
 
@@ -24,7 +22,7 @@ PBL_LOG_MODULE_DEFINE(service_phone_call, CONFIG_SERVICE_PHONE_CALL_LOG_LEVEL);
 //! - The watch gets PP messages (parsed in phone_pp.c), which come in as events happen.
 //! - The watch can decline / hangup the call by sending PP messages to the phone.
 //! On iOS:
-//! - The watch gets incomming calls from ANCS (parsed in ancs_notifications.c).
+//! - The watch gets incoming calls from ANCS (parsed in ancs_notifications.c).
 //! - After that the watch must poll the phone for its status if not iOS 9+ (using PP messages).
 //! - On iOS 9, ANCS tells us when the phone stops ringing
 //! - The watch can pickup / decline a call using ANCS actions
@@ -66,7 +64,7 @@ static void prv_timer_callback(void *context) {
 }
 
 static void prv_schedule_call_watchdog(int poll_interval_ms) {
-  // The Android app currently crashes if it recieves the get_state event. It currently doesn't
+  // The Android app currently crashes if it receives the get_state event. It currently doesn't
   // respond either so don't bother sending messages we don't need to. We also don't need to poll
   // iOS 9 since we can rely on ANCS to tell us when the phone stops ringing
   if (s_call_source == PhoneCallSource_ANCS_Legacy) {
@@ -76,11 +74,11 @@ static void prv_schedule_call_watchdog(int poll_interval_ms) {
       PBL_LOG_ERR("Could not start the phone call watchdog timer");
       prv_handle_call_end(true /* Treat this as a disconnection */);
     } else {
-      PBL_LOG_INFO("Phone call watchdog timer started");
+      PBL_LOG_DBG("Phone call watchdog timer started");
       pp_get_phone_state_set_enabled(true);
     }
   } else {
-    PBL_LOG_INFO("Not starting phone call watchdog, this isn't iOS 8: %d",
+    PBL_LOG_DBG("Not starting phone call watchdog, this isn't iOS 8: %d",
             s_call_source);
   }
 }
@@ -95,7 +93,7 @@ static bool prv_should_show_ongoing_call_ui(void) {
   return (s_call_source == PhoneCallSource_PP);
 }
 
-// hangup != decline. Decline == reject incomming call, Hangup == stop in progress call
+// hangup != decline. Decline == reject incoming call, Hangup == stop in progress call
 static bool prv_can_hangup(void) {
   // We can't hangup with iOS
   return !prv_call_is_ancs();
@@ -111,14 +109,20 @@ static void prv_call_end_common(void) {
 static void prv_handle_incoming_call(const PebblePhoneEvent *event) {
   // Only 1 call at a time is supported
   if (s_call_in_progress) {
-    PBL_LOG_INFO("Ignoring incoming call. A call is already in progress");
+    // An ANCS re-subscription mid-call makes iOS re-deliver the ongoing call under a new UID.
+    // Track the new identifier, otherwise the eventual hide event is rejected as a mismatch
+    // and the watch keeps ringing after the call was handled on the phone.
+    if (prv_call_is_ancs() && (event->source == PhoneCallSource_ANCS)) {
+      s_call_identifier = event->call_identifier;
+    }
+    PBL_LOG_DBG("Ignoring incoming call. A call is already in progress");
     return;
   }
 
   // If we're not on iOS9+, we need to be connected to the mobile app since it tells us when
   // the phone has stopped ringing
   if ((event->source != PhoneCallSource_ANCS) && !s_mobile_app_is_connected) {
-    PBL_LOG_INFO("Ignoring incoming call. Mobile app is not connected. Call source: %d ",
+    PBL_LOG_DBG("Ignoring incoming call. Mobile app is not connected. Call source: %d ",
             event->source);
     return;
   }
@@ -166,7 +170,7 @@ static void prv_handle_call_start(void) {
       phone_ui_handle_call_start(prv_can_hangup());
     }
   } else {
-    PBL_LOG_INFO("Ignoring start call. A call is not in progress");
+    PBL_LOG_DBG("Ignoring start call. A call is not in progress");
   }
 }
 
@@ -177,7 +181,7 @@ static void prv_handle_call_hide(PebblePhoneEvent *event) {
 
   // Make sure this wasn't caused due to an unrelated ANCS removal
   if (prv_call_is_ancs() && (s_call_identifier != event->call_identifier)) {
-    PBL_LOG_INFO("Ignoring hide call. Call identifier %"PRIu32" doesn't match %"PRIu32,
+    PBL_LOG_DBG("Ignoring hide call. Call identifier %"PRIu32" doesn't match %"PRIu32,
             s_call_identifier, event->call_identifier);
     return;
   }
@@ -191,7 +195,7 @@ static void prv_handle_call_end(bool disconnected) {
     prv_call_end_common();
     phone_ui_handle_call_end(false /*call accepted*/, disconnected);
   } else if (!disconnected) {
-    PBL_LOG_INFO("Ignoring end call. A call is not in progress");
+    PBL_LOG_DBG("Ignoring end call. A call is not in progress");
   }
 }
 
@@ -214,7 +218,7 @@ T_STATIC void prv_handle_phone_event(PebbleEvent *e, void *context) {
 
   if (!(event.type == PhoneEventType_Incoming && new_timer_scheduled(s_call_watchdog, NULL))) {
     // Be careful not to spam the logs with the new iOS polling implementation
-    PBL_LOG_INFO("PebblePhoneEvent: %d, Call in progress: %s, Connected: %s",
+    PBL_LOG_DBG("PebblePhoneEvent: %d, Call in progress: %s, Connected: %s",
       event.type, s_call_in_progress ? "T": "F", s_mobile_app_is_connected ? "T": "F");
   }
 
@@ -301,7 +305,7 @@ void phone_call_service_init() {
 }
 
 void phone_call_answer(void) {
-  PBL_LOG_INFO("Call accepted");
+  PBL_LOG_DBG("Call accepted");
 
   if (prv_call_is_ancs()) {
     ancs_perform_action(s_call_identifier, ActionIDPositive);
@@ -315,7 +319,7 @@ void phone_call_answer(void) {
 }
 
 void phone_call_decline(void) {
-  PBL_LOG_INFO("Call declined");
+  PBL_LOG_DBG("Call declined");
 
   if (prv_call_is_ancs()) {
     ancs_perform_action(s_call_identifier, ActionIDNegative);

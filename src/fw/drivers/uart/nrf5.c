@@ -1,19 +1,13 @@
 /* SPDX-FileCopyrightText: 2025 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "nrf5.h"
-#include "drivers/uart.h"
+#include <pbl/drivers/uart/nrf5.h>
+#include <pbl/drivers/uart.h>
 
-#include "drivers/gpio.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
-#include "FreeRTOS.h"
-
-#include <mcu/interrupts.h>
-
 #include <nrfx_uarte.h>
-#include <nrfx_timer.h>
 #ifdef NRF_PPI_BASE
 #include <nrfx_ppi.h>
 #else
@@ -21,7 +15,6 @@
 #endif
 
 PBL_LOG_MODULE_DEFINE(driver_uart_nrf5, CONFIG_DRIVER_UART_LOG_LEVEL);
-
 
 // UART: 8n1, duplex
 
@@ -177,7 +170,6 @@ void uart_set_baud_rate(UARTDevice *dev, uint32_t baud_rate) {
     WTF;
 }
 
-
 // Read / Write APIs
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -244,7 +236,6 @@ void uart_wait_for_tx_complete(UARTDevice *dev) {
   while (!uart_is_tx_complete(dev)) continue;
 }
 
-
 void uart_set_rx_interrupt_handler(UARTDevice *dev, UARTRXInterruptHandler irq_handler) {
   PBL_ASSERTN(dev->state->initialized);
   dev->state->rx_irq_handler = irq_handler;
@@ -270,7 +261,6 @@ void uart_clear_all_interrupt_flags(UARTDevice *dev) {
   WTF; /* only used internally? */
 }
 
-
 // DMA
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -280,24 +270,16 @@ void uart_clear_all_interrupt_flags(UARTDevice *dev) {
 
 static void _uart_event_handler(const nrfx_uarte_event_t *event, void *ctx) {
   UARTDevice *dev = (UARTDevice *)ctx;
-  bool should_context_switch = false;
 
   switch (event->type) {
   case NRFX_UARTE_EVT_RX_BUF_REQUEST:
     dev->state->rx_dma_index = (dev->state->rx_dma_index + 1) % DMA_BUFFERS;
     nrfx_uarte_rx_buffer_set(&dev->periph, GET_SUBBUF_P(dev, dev->state->rx_dma_index), dev->state->rx_dma_length);
-#ifdef DEBUG_UART
-    PBL_LOG_INFO("rxbuf req %p", GET_SUBBUF_P(dev, dev->state->rx_dma_index));
-#endif
     break;
   case NRFX_UARTE_EVT_RX_BYTE:
     /* we'll catch this up in the ring buffer catchup below */
     break;
   case NRFX_UARTE_EVT_RX_DONE: {
-#ifdef DEBUG_UART
-    uint8_t *buf = event->data.rx.p_buffer;
-    PBL_LOG_INFO("rxbuf done %p (hopefully %p)", buf, GET_SUBBUF_P(dev, dev->state->rx_prod_index));
-#endif
     dev->state->rx_prod_index = (dev->state->rx_prod_index + 1) % DMA_BUFFERS;
     break;
   }
@@ -314,16 +296,10 @@ static void _uart_event_handler(const nrfx_uarte_event_t *event, void *ctx) {
     if (ofs == dev->state->rx_dma_length) /* already consumed */
       continue;
 
-#ifdef DEBUG_UART
-    uint8_t *bufx = buf + ofs;
-    PBL_LOG_INFO("consume complete %p with %lu bytes left: : %02x %02x %02x %02x %02x %02x %02x %02x", buf, dev->state->rx_dma_length - ofs,
-      bufx[0], bufx[1], bufx[2], bufx[3], bufx[4], bufx[5], bufx[6], bufx[7]);
-#endif
-
     const UARTRXErrorFlags err_flags = {}; /* ignored, for now */
     for (; ofs < dev->state->rx_dma_length; ofs++) {
       if (dev->state->rx_irq_handler && dev->state->rx_int_enabled) {
-        should_context_switch |= dev->state->rx_irq_handler(dev, buf[ofs], &err_flags);
+        dev->state->rx_irq_handler(dev, buf[ofs], &err_flags);
       }
     }
   }
@@ -332,21 +308,13 @@ static void _uart_event_handler(const nrfx_uarte_event_t *event, void *ctx) {
   if (dev->state->rx_cons_pos < curpos) { /* if it is greater, then we have wrapped and we will catch it on the completed buffer irq later */
     uint8_t *buf = GET_SUBBUF_P(dev, dev->state->rx_cons_index);
 
-#ifdef DEBUG_UART
-    uint8_t *bufx = buf + dev->state->rx_cons_pos;
-    PBL_LOG_INFO("consume %ld bytes: %02x %02x %02x %02x %02x %02x %02x %02x", curpos - dev->state->rx_cons_pos,
-      bufx[0], bufx[1], bufx[2], bufx[3], bufx[4], bufx[5], bufx[6], bufx[7]);
-#endif
-
     const UARTRXErrorFlags err_flags = {}; /* ignored, for now */
     for (; dev->state->rx_cons_pos < curpos; dev->state->rx_cons_pos++) {
       if (dev->state->rx_irq_handler && dev->state->rx_int_enabled) {
-        should_context_switch |= dev->state->rx_irq_handler(dev, buf[dev->state->rx_cons_pos], &err_flags);
+        dev->state->rx_irq_handler(dev, buf[dev->state->rx_cons_pos], &err_flags);
       }
     }
   }
-  
-  portEND_SWITCHING_ISR(should_context_switch);
 }
 
 void uart_start_rx_dma(UARTDevice *dev, void *buffer, uint32_t length) {
@@ -356,9 +324,6 @@ void uart_start_rx_dma(UARTDevice *dev, void *buffer, uint32_t length) {
    * we trigger a RXSTOP, eat the old buffer, and open the new buffer.  ugh!
    */
   PBL_ASSERTN((((uint32_t) buffer) & 3) == 0);
-#ifdef DEBUG_UART
-  PBL_LOG_INFO("start_rx_dma");
-#endif
   dev->state->rx_dma_buffer = buffer;
   dev->state->rx_dma_length = length / DMA_BUFFERS;
   if (dev->state->rx_dma_length % 4)
@@ -377,9 +342,6 @@ void uart_start_rx_dma(UARTDevice *dev, void *buffer, uint32_t length) {
 }
 
 void uart_stop_rx_dma(UARTDevice *dev) {
-#ifdef DEBUG_UART
-  PBL_LOG_INFO("stop_rx_dma");
-#endif
   nrfx_uarte_rx_abort(&dev->periph, true, true);
   nrfx_timer_disable(&dev->counter);
 }

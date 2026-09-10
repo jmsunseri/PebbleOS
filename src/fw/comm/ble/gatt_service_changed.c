@@ -11,13 +11,9 @@
 
 #include "pbl/services/new_timer/new_timer.h"
 #include "pbl/services/system_task.h"
-#include "system/logging.h"
-
-#include "util/net.h"
-#include "system/hexdump.h"
+#include <pbl/logging/logging.h>
 
 #include <bluetooth/gatt.h>
-#include <btutil/bt_device.h>
 
 extern BTErrno gatt_client_discovery_rediscover_all(const BTDeviceInternal *device);
 extern void gatt_client_discovery_handle_service_range_change(GAPLEConnection *connection,

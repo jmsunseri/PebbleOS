@@ -13,12 +13,11 @@
 #include "pbl/services/system_task.h"
 #include "pbl/services/app_cache.h"
 #include "pbl/services/blob_db/app_db.h"
-#include "pbl/services/process_management/app_storage.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
-#include "util/math.h"
-#include "util/uuid.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/math.h"
+#include "pbl/util/uuid.h"
 
 PBL_LOG_MODULE_DEFINE(service_app_fetch_endpoint, CONFIG_SERVICE_APP_FETCH_ENDPOINT_LOG_LEVEL);
 
@@ -148,7 +147,7 @@ static void prv_cleanup(AppFetchResult result) {
 }
 
 //! System task callback triggered by app_fetch_put_bytes_event_handler() when we are receiving
-//! put_bytes messages in reponse to a fetch request to the phone.
+//! put_bytes messages in response to a fetch request to the phone.
 void prv_put_bytes_event_system_task_cb(void *data) {
   PebblePutBytesEvent *pb_event = (PebblePutBytesEvent *)data;
 

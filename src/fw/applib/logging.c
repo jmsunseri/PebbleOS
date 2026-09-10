@@ -1,10 +1,10 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "syscall/syscall.h"
 
-#include "kernel/logging_private.h"
+#include "logging/logging_private.h"
 #include "kernel/kernel_applib_state.h"
 
 #include "process_state/app_state/app_state.h"
@@ -12,18 +12,14 @@
 
 #include "pebbleos/chip_id.h"
 
-#include "logging/log_hashing.h"
-#include "system/logging.h"
+#include <pbl/logging/log_hashing.h>
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
 #include "util/net.h"
-#include "util/string.h"
+#include "pbl/util/string.h"
 
-#include <inttypes.h>
-#include <limits.h>
 #include <stdarg.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 

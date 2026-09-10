@@ -5,7 +5,6 @@
 
 #include "applib/ui/window.h"
 #include "applib/ui/window_stack.h"
-#include "pbl/services/timeline/item.h"
 
 //! @file action_menu_window.h
 //! @addtogroup UI
@@ -35,7 +34,7 @@ struct ActionMenu;
 typedef struct ActionMenu ActionMenu;
 
 //! Callback executed after the ActionMenu has closed, so memory may be freed.
-//! @param root_level the root level passed to the ActionMenu
+//! @param menu the ActionMenu
 //! @param performed_action the ActionMenuItem for the action that was performed,
 //! NULL if the ActionMenu is closing without an action being selected by the user
 //! @param context the context passed to the ActionMenu
@@ -44,7 +43,7 @@ typedef void (*ActionMenuDidCloseCb)(ActionMenu *menu,
                                      void *context);
 
 //! Callback executed immediately before the ActionMenu closes.
-//! @param root_level the root ActionMenuLevel passed to the ActionMenu
+//! @param menu the ActionMenu
 //! @param performed_action the ActionMenuItem for the action that was performed,
 //! NULL if the ActionMenu is closing without an action being selected by the user
 //! @param context the context passed to the ActionMenu
@@ -55,7 +54,7 @@ typedef void (*ActionMenuWillCloseCb)(ActionMenu *menu,
 //! Configuration struct for the ActionMenu
 typedef struct {
   const ActionMenuLevel *root_level; //!< the root level of the ActionMenu
-  void *context; //!< a context pointer which will be accessbile when actions are performed
+  void *context; //!< a context pointer which will be accessible when actions are performed
   struct {
     GColor background; //!< the color of the left column of the ActionMenu
     GColor foreground; //!< the color of the individual "crumbs" that indicate menu depth

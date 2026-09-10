@@ -14,8 +14,8 @@
 #include "applib/voice/dictation_session.h"
 #include "applib/ui/click.h"
 #include "apps/system/app_fetch_ui.h"
-#include "drivers/battery.h"
-#include "drivers/button_id.h"
+#include <pbl/drivers/battery.h>
+#include <pbl/drivers/button_id.h>
 #include "process_management/app_install_types.h"
 #include "pbl/services/battery/battery_monitor.h"
 #include "pbl/services/bluetooth/bluetooth_ctl.h"
@@ -34,10 +34,9 @@
 #include "pbl/services/timeline/peek.h"
 #include "pbl/services/timeline/reminders.h"
 #include "kernel/pebble_tasks.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 
-#include "freertos_types.h"
-#include "portmacro.h"
+#include "pbl/kernel/msgq.h"
 
 #include <bluetooth/bluetooth_types.h>
 
@@ -208,6 +207,7 @@ typedef enum {
   PebbleMediaEventTypeServerConnected,
   PebbleMediaEventTypeServerDisconnected,
   PebbleMediaEventTypeTrackPosChanged,
+  PebbleMediaEventTypeAlbumArtUpdated,
 } PebbleMediaEventType;
 
 typedef struct PACKED { // 2 bytes
@@ -354,7 +354,6 @@ typedef struct PACKED { // 3 byte?
   bool enabled;
   BtCtlModeOverride override;
 } PebbleBluetoothStateEvent;
-
 
 typedef enum {
   PebblePutBytesEventTypeStart,
@@ -589,11 +588,11 @@ typedef struct PACKED { // 9 bytes
   bool dst_changed;
 } PebbleSetTimeEvent;
 
-typedef struct PACKED { // 5 bytes
+typedef struct PACKED { // 6 bytes
   TouchEvent event;
 } PebbleTouchEvent;
 
-typedef struct PACKED { // 5 bytes
+typedef struct PACKED { // 6 bytes
   GestureEvent event;
 } PebbleGestureEvent;
 
@@ -709,7 +708,7 @@ _Static_assert(sizeof(PebbleTimelinePeekEvent) == 8,
 typedef enum PebbleAppCacheEventType {
   PebbleAppCacheEvent_Removed,
 
-  PebbleAppCacehEventNum
+  PebbleAppCacheEventNum
 } PebbleAppCacheEventType;
 
 typedef struct PACKED PebbleAppCacheEvent {
@@ -744,7 +743,6 @@ typedef enum PebbleWorkoutEventType {
 typedef struct PebbleWorkoutEvent {
   PebbleWorkoutEventType type;
 } PebbleWorkoutEvent;
-
 
 typedef struct PACKED {
   union PACKED {
@@ -818,6 +816,12 @@ typedef struct PACKED {
   PebbleEventType type:8;
 } PebbleEvent;
 
+// Guard the on-target size. The bound assumes 4-byte pointers, so it only
+// applies to the firmware target; the host unit-test build has wider pointers.
+#if __SIZEOF_POINTER__ == 4
+_Static_assert(sizeof(PebbleEvent) <= 12, "PebbleEvent grew; check the event union layout");
+#endif
+
 void events_init(void);
 
 void event_put(PebbleEvent* event);
@@ -841,9 +845,9 @@ void event_cleanup(PebbleEvent* event);
 void event_reset_from_process_queue(PebbleTask task);
 
 //! Get the queue for messaging to the kernel from the given task
-QueueHandle_t event_get_to_kernel_queue(PebbleTask task);
+struct pbl_msgq *event_get_to_kernel_queue(PebbleTask task);
 
-QueueHandle_t event_kernel_to_kernel_event_queue(void);
+struct pbl_msgq *event_kernel_to_kernel_event_queue(void);
 
 //! Call to reset a queue and free all memory associated w/ the events it contains
-BaseType_t event_queue_cleanup_and_reset(QueueHandle_t queue);
+void event_queue_cleanup_and_reset(struct pbl_msgq *queue);

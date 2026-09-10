@@ -23,14 +23,14 @@
 //! The metadata describes how long each row of pixels is in the buffer (the stride).
 //! The following restrictions on stride are in place for different formats:
 //!
-//! - \ref GBitmapFormat1Bit:
+//! - \ref GBitmapFormat1Bit "GBitmapFormat1Bit":
 //!   Each row must be a multiple of 32 pixels (4 bytes). Using the `bounds` field,
 //!   the area that is actually relevant can be specified.
 //!   For example, when the image is 29 by 5 pixels
 //!   (width by height) and the first bit of image data is the pixel at (0, 0),
 //!   then the bounds.size would be `GSize(29, 5)` and bounds.origin would be `GPoint(0, 0)`.
 //!   ![](gbitmap.png)
-//!   In the illustration each pixel is a representated as a square. The white
+//!   In the illustration each pixel is a represented as a square. The white
 //!   squares are the bits that are used, the gray squares are the padding bits, because
 //!   each row of image data has to be a multiple of 4 bytes (32 bits).
 //!   The numbers in the column in the left are the offsets (in bytes) from the `*addr`
@@ -40,12 +40,12 @@
 //!   it will result in a black pixel.
 //!   ![](pixel_bit_values.png)
 //!
-//! - \ref GBitmapFormat8Bit:
-//!   Each pixel in the bitmap is represented by 1 byte. The color value of that byte correspends to
+//! - \ref GBitmapFormat8Bit "GBitmapFormat8Bit":
+//!   Each pixel in the bitmap is represented by 1 byte. The color value of that byte corresponds to
 //!   a GColor.argb value.
 //!   There is no restriction on row_size_bytes / stride.
 //!
-//! - \ref GBitmapFormat1BitPalette, \ref GBitmapFormat2BitPalette, \ref GBitmapFormat4BitPalette:
+//! - \ref GBitmapFormat1BitPalette, \ref GBitmapFormat2BitPalette, \ref GBitmapFormat4BitPalette "GBitmapFormat4BitPalette":
 //!   Each pixel in the bitmap is represented by the number of bits the format specifies. Pixels
 //!   must be packed.
 //!   For example, in GBitmapFormat2BitPalette, each pixel uses 2 bits. This means 4 pixels / byte.
@@ -66,8 +66,8 @@
 //! @see \ref gbitmap_create_with_data
 //! @see \ref gbitmap_create_with_resource
 //!
-//!       @{
-//!       @} // end addtogroup pbi_file_format
+//!   @{
+//!   @} // end addtogroup pbi_file_format
 //!     @} // end addtogroup FileFormats
 //!   @} // end addtogroup Resources
 //! @} // end addtogroup Foundation

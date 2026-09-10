@@ -1,10 +1,9 @@
 /* SPDX-FileCopyrightText: 2026 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/display/display.h"
+#include <pbl/drivers/display/display.h>
 
 #include "board/board.h"
-#include "board/display.h"
 #include "system/passert.h"
 
 #include <string.h>

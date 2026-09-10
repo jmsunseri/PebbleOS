@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+
 from binutils import analyze_elf
 
 if __name__ == "__main__":
@@ -16,5 +17,5 @@ if __name__ == "__main__":
 
     sections = analyze_elf(args.elf_file, args.sections, args.fast)
 
-    for s in sections.itervalues():
+    for s in sections.values():
         s.pprint(args.summary, args.verbose)

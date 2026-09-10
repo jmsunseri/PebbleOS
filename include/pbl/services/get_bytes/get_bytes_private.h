@@ -5,12 +5,11 @@
 
 #include "get_bytes.h"
 
-#include <inttypes.h>
 #include <stdint.h>
 
 #include "kernel/core_dump_private.h"
 #include "pbl/services/comm_session/session.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 
 // This matches the entry we put into protocol_endpoints_table.h
 static const uint16_t GET_BYTES_ENDPOINT_ID = 9000;

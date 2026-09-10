@@ -3,7 +3,6 @@
 
 #include "buffer.h"
 
-#include "system/logging.h"
 #include "system/passert.h"
 
 #include "kernel/pbl_malloc.h"

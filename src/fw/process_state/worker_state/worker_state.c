@@ -8,7 +8,6 @@
 #include "process_state/worker_state/worker_state.h"
 #include "syscall/syscall.h"
 #include "tinymt32.h"
-#include "util/attributes.h"
 
 typedef struct {
   Heap heap;

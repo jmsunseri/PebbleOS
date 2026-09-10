@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "applib/ui/layer.h"
 #include "apps/system/timeline/text_node.h"
 
 #include <stddef.h>
@@ -48,6 +47,7 @@ GTextNodeText *health_util_create_text_node_with_text(const char *text, GFont fo
 //! @param[in,out] buffer the string buffer to write to
 //! @param buffer_size the size of the string buffer
 //! @param duration_s the duration is seconds
+//! @param leading_zero whether to include a leading zero in the formatted string
 //! @param i18n_owner i18n owner that must be called with i18n_free_all some time after usage
 //! @return snprintf-style number of bytes needed to be written not including the null terminator
 int health_util_format_hours_minutes_seconds(char *buffer, size_t buffer_size, int duration_s,

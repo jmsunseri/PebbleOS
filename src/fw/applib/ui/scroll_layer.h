@@ -38,7 +38,7 @@
 //! UP and DOWN buttons with scrolling up and down.
 //! * The SELECT button can be configured by installing a click configuration
 //! provider using \ref scroll_layer_set_callbacks().
-//! * To scroll programatically to a certain offset, use
+//! * To scroll programmatically to a certain offset, use
 //! \ref scroll_layer_set_content_offset().
 //! * It is possible to get called back for each scrolling increment, by
 //! installing the `.content_offset_changed_handler` callback using
@@ -125,6 +125,22 @@ typedef struct ScrollLayer {
   //! Application supplied callback context.
   //! Use \ref scroll_layer_set_context() to assign the callback context.
   void *context;
+
+  //! @internal
+  //! Intrusive Tier-1 touch-navigation registry node (layout-compatible with
+  //! \ref TouchNavWidgetNode: four pointers — \c next, \c layer, \c ops, \c widget). Embedding it
+  //! here lets a bare ScrollLayer be registered as a Tier-1 touch widget so a finger pan scrolls its
+  //! content 1:1. Declared unconditionally (not under \c CONFIG_TOUCH) so the struct layout — and
+  //! therefore \c sizeof(ScrollLayer) — is identical on every board and the applib-malloc budget is
+  //! board-independent. It sits at the pointer-aligned tail, introducing no alignment padding of its
+  //! own. A build-time assert in scroll_layer.c keeps this node's layout in sync with
+  //! \ref TouchNavWidgetNode; the applib_malloc size check pins the (grown) \c sizeof(ScrollLayer).
+  struct {
+    void *next;
+    void *layer;
+    void *ops;
+    void *widget;
+  } touch_nav_node;
 } ScrollLayer;
 
 #ifndef __clang__
@@ -143,10 +159,10 @@ _Static_assert(offsetof(struct ScrollPaging, flags) == offsetof(Layer, flags),
 //! * Callback context: `NULL`
 //! The layer is marked dirty automatically.
 //! @param scroll_layer The ScrollLayer to initialize
-//! @param frame The frame with which to initialze the ScrollLayer
+//! @param frame The frame with which to initialize the ScrollLayer
 void scroll_layer_init(ScrollLayer *scroll_layer, const GRect *frame);
 
-//! Creates a new ScrollLayer on the heap and initalizes it with the default values:
+//! Creates a new ScrollLayer on the heap and initializes it with the default values:
 //! * Clips: `true`
 //! * Hidden: `false`
 //! * Content size: `frame.size`

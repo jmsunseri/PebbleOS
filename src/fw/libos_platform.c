@@ -2,12 +2,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "kernel/pbl_malloc.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
-
-#include <stdio.h>
-#include <stdlib.h>
+#include "pbl/util/attributes.h"
 
 void os_log(const char *filename, int line, const char *string) {
   pbl_log(LOG_LEVEL_INFO, filename, line, string);

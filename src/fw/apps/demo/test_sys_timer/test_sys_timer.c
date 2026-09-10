@@ -12,9 +12,9 @@
 #include "process_state/app_state/app_state.h"
 #include "pbl/services/new_timer/new_timer.h"
 #include "pbl/services/regular_timer.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #define NUM_MAX_TIMERS 10
 
@@ -302,7 +302,7 @@ void stuck_callback_menu_cb(int index, void *ctx) {
 }
 
 // =================================================================================
-void invaid_timer_id_menu_cb(int index, void *ctx) {
+void invalid_timer_id_menu_cb(int index, void *ctx) {
   void *cb_data = 0;
   uint32_t zero_flags = 0;
 
@@ -392,7 +392,7 @@ static void prv_window_load(Window *window) {
       .callback = stuck_callback_menu_cb
     }, {
       .title = "invalid timer ID",
-      .callback = invaid_timer_id_menu_cb
+      .callback = invalid_timer_id_menu_cb
     }, {
       .title = "RT: sch 1 sec from cb",
       .callback = reg_timer_schedule_1sec_from_cb_menu_cb

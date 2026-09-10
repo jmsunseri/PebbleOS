@@ -15,9 +15,9 @@
 #include "pbl/services/activity/activity_private.h"
 #include "pbl/services/activity/kraepelin/activity_algorithm_kraepelin.h"
 #include "pbl/services/activity/insights_settings.h"
-#include "system/logging.h"
-#include "util/math.h"
-#include "util/size.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
 
 #include "activity_test.h"
 
@@ -672,7 +672,7 @@ static void prv_test_steps(void *context) {
   // Reset all stored data
   activity_test_reset(true /*reset_settings*/, true /*tracking_on*/, NULL, NULL);
 
-  // Fill the steps pipleine then capture step count before
+  // Fill the steps pipeline then capture step count before
   activity_test_feed_samples(s_walk_30_steps, ARRAY_LENGTH(s_walk_30_steps));
   int32_t before;
   activity_get_metric(ActivityMetricStepCount, 1, &before);

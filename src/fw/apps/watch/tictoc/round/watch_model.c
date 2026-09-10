@@ -3,11 +3,10 @@
 
 #include "watch_model.h"
 
-#include "util/trig.h"
+#include "pbl/util/trig.h"
 #include "applib/app_watch_info.h"
 #include "applib/pbl_std/pbl_std.h"
 #include "applib/tick_timer_service.h"
-#include "applib/platform.h"
 #include "resource/resource_ids.auto.h"
 #include "syscall/syscall.h"
 #include "util/time/time.h"
@@ -134,7 +133,7 @@ static ClockModel prv_clock_model_default(struct tm *tick_time) {
   const WatchInfoColor watch_color = sys_watch_info_get_color();
 
   switch (watch_color) {
-#ifdef CONFIG_BOARD_FAMILY_GETAFIX
+#ifdef CONFIG_PLATFORM_GABBRO
     case WATCH_INFO_COLOR_COREDEVICES_PR2_BLACK_20:
       model.num_non_local_clocks = 2;
       model.local_clock.hour_hand.thickness = 14;

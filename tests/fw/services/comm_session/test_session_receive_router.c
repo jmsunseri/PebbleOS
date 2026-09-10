@@ -8,7 +8,7 @@
 #include "pbl/services/comm_session/session_remote_version.h"
 #include "pbl/services/comm_session/session_transport.h"
 #include "pbl/services/comm_session/test_endpoint_ids.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
 // Stubs
 ///////////////////////////////////////////////////////////
@@ -124,7 +124,7 @@ static void prv_set_connection_responsiveness(Transport *transport,
 
 }
 
-// Referenced from protocol_endppints_table.auto.h override header:
+// Referenced from protocol_endpoints_table.auto.h override header:
 ///////////////////////////////////////////////////////////
 
 typedef enum {

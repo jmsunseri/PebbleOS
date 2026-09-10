@@ -1,6 +1,7 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
+#include "pbl/kernel/irq.h"
 #include "pbl/services/put_bytes/put_bytes.h"
 #include "pbl/services/put_bytes/put_bytes_storage.h"
 
@@ -8,7 +9,7 @@
 #include "kernel/events.h"
 #include "kernel/pbl_malloc.h"
 #include "kernel/system_message.h"
-#include "os/tick.h"
+#include "pbl/kernel/types.h"
 #include "resource/resource_storage_file.h"
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/comm_session/session_receive_router.h"
@@ -18,16 +19,14 @@
 #include "pbl/services/process_management/app_storage.h"
 #include "system/bootbits.h"
 #include "system/firmware_storage.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
-#include "util/math.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/math.h"
 #include "util/net.h"
 #include <bluetooth/analytics.h>
 
-#include "FreeRTOS.h"
-#include "semphr.h"
-#include "task.h"
+#include "pbl/kernel/sem.h"
 
 #include <string.h>
 
@@ -174,7 +173,7 @@ static struct InstallableObject {
   uint32_t index;
 } s_ready_to_install[NumObjects];
 
-static SemaphoreHandle_t s_pb_semaphore;
+static PBL_SEM_DEFINE(s_pb_semaphore, 1, 1);
 
 //! Marks that the receiver state is now free to use
 static void prv_receiver_reset(void);
@@ -182,11 +181,11 @@ static void prv_receiver_reset(void);
 static void prv_send_response(ResponseCode code, uint32_t token);
 
 static void prv_lock_pb_job_state(void) {
-  taskENTER_CRITICAL();
+  pbl_irq_lock();
 }
 
 static void prv_unlock_pb_job_state(void) {
-  taskEXIT_CRITICAL();
+  pbl_irq_unlock();
 }
 
 //! Simply returns the next free buffer from the PB jobs array. Returns NULL if none are available
@@ -214,7 +213,6 @@ static uint8_t *prv_get_next_pb_job_buffer(void) {
 
   return put_jobs->job[write_idx].buffer;
 }
-
 
 //! Marks the PB job as written to
 static void prv_finalize_pb_job(void) {
@@ -298,7 +296,7 @@ static bool prv_init_put_job_queue_if_necessary(void) {
         prv_deinit_put_job_queue();
         return false;
       } if (i == 1) {
-        PBL_LOG_INFO("Not enough memory for PB pre-ack, falling back to legacy mode");
+        PBL_LOG_DBG("Not enough memory for PB pre-ack, falling back to legacy mode");
         put_jobs->enable_preack = false;
         break;
       } else {
@@ -313,7 +311,7 @@ static bool prv_init_put_job_queue_if_necessary(void) {
 
 static void prv_set_responsiveness(ResponseTimeState state, uint16_t timeout_secs) {
   comm_session_set_responsiveness(comm_session_get_system_session(),
-                                  BtConsumerPpPutBytes, ResponseTimeMin, timeout_secs);
+                                  BtConsumerPpPutBytes, state, timeout_secs);
 }
 
 static void prv_send_nack_from_system_task(void *data) {
@@ -330,7 +328,7 @@ static void prv_add_nack_no_token_system_callback(void) {
 }
 
 static void prv_cleanup(void) {
-  PBL_LOG_INFO("Put bytes cleanup. Tok: %"PRIu32, s_pb_state.token);
+  PBL_LOG_DBG("Put bytes cleanup. Tok: %"PRIu32, s_pb_state.token);
 
   prv_deinit_put_job_queue();
   s_pb_state.receiver = (__typeof__(s_pb_state.receiver)) {};
@@ -373,9 +371,9 @@ static void prv_cleanup(void) {
 }
 
 static void prv_cleanup_from_system_task(void* data) {
-  xSemaphoreTake(s_pb_semaphore, portMAX_DELAY);
+  pbl_sem_take(&s_pb_semaphore, PBL_FOREVER);
   prv_cleanup();
-  xSemaphoreGive(s_pb_semaphore);
+  pbl_sem_give(&s_pb_semaphore);
 }
 
 static void prv_cleanup_async(void) {
@@ -502,7 +500,7 @@ static void prv_do_install(uint32_t token) {
     return;
   }
 
-  PBL_LOG_INFO("PutBytes install CB. Tok: %"PRIu32", type: %d", token, o->type);
+  PBL_LOG_DBG("PutBytes install CB. Tok: %"PRIu32", type: %d", token, o->type);
 
   switch (o->type) {
   case ObjectFirmware:
@@ -526,7 +524,7 @@ static void prv_do_install(uint32_t token) {
 }
 
 static void prv_do_abort(void) {
-  PBL_LOG_INFO("PutBytes abort CB. Tok: %"PRIu32".", s_pb_state.token);
+  PBL_LOG_DBG("PutBytes abort CB. Tok: %"PRIu32".", s_pb_state.token);
   prv_mark_pb_jobs_complete(1);
   prv_cleanup_and_send_response(ResponseAck);
 }
@@ -668,7 +666,7 @@ static bool prv_setup_storage_for_init_request(const InitRequest *request, uint3
     case ObjectSysResources:
       // Clear out, in case a prior, non-installed FW or sys resources transfer was still dangling:
       s_ready_to_install[request->type - 1].type = 0;
-      /* FALLTHRU */
+      /* FALLTHROUGH */
     default: {
       storage_info = kernel_malloc_check(sizeof(PutBytesStorageInfo));
       storage_info->index = request->index;
@@ -725,7 +723,7 @@ static void prv_do_init(void) {
   const uint32_t r = rand();
   s_pb_state.token = MAX(1, r);
 
-  PBL_LOG_INFO("PutBytes Init CB. Type: %d, Idx: %"PRIu32", Size: %"PRIu32" Tok: %"PRIu32,
+  PBL_LOG_DBG("PutBytes Init CB. Type: %d, Idx: %"PRIu32", Size: %"PRIu32" Tok: %"PRIu32,
           (int) s_pb_state.type, s_pb_state.index,
           s_pb_state.total_size, s_pb_state.token);
 
@@ -771,9 +769,9 @@ static bool prv_check_putrequest_for_errors(const PutRequest *request_hdr,
 static bool prv_do_put(const PutRequest *request, uint32_t request_size, uint32_t token) {
   uint32_t data_length = ntohl(request->length);
 
-  xSemaphoreTake(s_pb_semaphore, portMAX_DELAY);
+  pbl_sem_take(&s_pb_semaphore, PBL_FOREVER);
   uint32_t remaining_bytes = s_pb_state.remaining_bytes;
-  xSemaphoreGive(s_pb_semaphore);
+  pbl_sem_give(&s_pb_semaphore);
 
   if (prv_check_putrequest_for_errors(request, request_size) ||
       (data_length > remaining_bytes)) {
@@ -786,15 +784,15 @@ static bool prv_do_put(const PutRequest *request, uint32_t request_size, uint32_
 
   pb_storage_append(&s_pb_state.storage, request->data, data_length);
 
-  xSemaphoreTake(s_pb_semaphore, portMAX_DELAY);
+  pbl_sem_take(&s_pb_semaphore, PBL_FOREVER);
   s_pb_state.remaining_bytes -= data_length;
-  xSemaphoreGive(s_pb_semaphore);
+  pbl_sem_give(&s_pb_semaphore);
 
   return true;
 }
 
 static void prv_do_commit(void) {
-  uint32_t elapsed_time_ms = ticks_to_milliseconds(rtc_get_ticks() - s_pb_state.start_ticks);
+  uint32_t elapsed_time_ms = pbl_ticks_to_ms(rtc_get_ticks() - s_pb_state.start_ticks);
 
   const CommitRequest *request = (const CommitRequest *)s_pb_state.receiver.buffer;
 
@@ -920,7 +918,7 @@ static void prv_process_put_requests_system_task_cb(void *unused) {
     }
   }
 
-  xSemaphoreTake(s_pb_semaphore, portMAX_DELAY);
+  pbl_sem_take(&s_pb_semaphore, PBL_FOREVER);
   {
     s_pb_state.current_command = PutBytesPut;
     uint32_t bytes_transferred = initial_remaining_bytes - s_pb_state.remaining_bytes;
@@ -938,7 +936,7 @@ static void prv_process_put_requests_system_task_cb(void *unused) {
     };
     event_put(&event);
   }
-  xSemaphoreGive(s_pb_semaphore);
+  pbl_sem_give(&s_pb_semaphore);
 
   // (re)start timer for next event
   PBL_ASSERTN(new_timer_start(s_pb_state.timer_id, PUT_TIMEOUT_MS, prv_timer_callback,
@@ -962,7 +960,7 @@ static void prv_process_put_requests_system_task_cb(void *unused) {
 }
 
 static void prv_process_msg_system_task_callback(void *unused) {
-  xSemaphoreTake(s_pb_semaphore, portMAX_DELAY);
+  pbl_sem_take(&s_pb_semaphore, PBL_FOREVER);
 
   if (!s_pb_state.receiver.buffer ||
       s_pb_state.receiver.length == 0) {
@@ -1008,18 +1006,16 @@ static void prv_process_msg_system_task_callback(void *unused) {
 
 finally:
   prv_receiver_reset();
-  xSemaphoreGive(s_pb_semaphore);
+  pbl_sem_give(&s_pb_semaphore);
 }
 
 void put_bytes_init(void) {
-  vSemaphoreCreateBinary(s_pb_semaphore)
-  PBL_ASSERTN(s_pb_semaphore != NULL);
 }
 
 void put_bytes_cancel(void) {
   PBL_ASSERT_TASK(PebbleTask_KernelBackground);
 
-  if (xSemaphoreTake(s_pb_semaphore, portMAX_DELAY) != pdTRUE) {
+  if ((pbl_sem_take(&s_pb_semaphore, PBL_FOREVER) != 0)) {
     PBL_LOG_ERR("Failed to acquire the put-bytes semaphore");
     return;
   }
@@ -1030,19 +1026,19 @@ void put_bytes_cancel(void) {
   } else if (s_pb_state.type == ObjectWatchApp ||
              s_pb_state.type == ObjectAppResources ||
              s_pb_state.type == ObjectWatchWorker) {
-    PBL_LOG_INFO("Forcefully cancelling put_bytes transfer of app binaries");
+    PBL_LOG_DBG("Forcefully cancelling put_bytes transfer of app binaries");
     prv_cleanup();
   } else {
     PBL_LOG_DBG("Attempted to cancel put_bytes with a non desired type, %d",
             s_pb_state.type);
   }
 
-  xSemaphoreGive(s_pb_semaphore);
+  pbl_sem_give(&s_pb_semaphore);
 }
 
 // Only used by unit test
 void put_bytes_deinit(void) {
-  vSemaphoreDelete(s_pb_semaphore);
+  pbl_sem_deinit(&s_pb_semaphore);
 
   if (s_pb_state.timer_id != TIMER_INVALID_ID) {
     new_timer_delete(s_pb_state.timer_id);
@@ -1055,7 +1051,7 @@ void put_bytes_deinit(void) {
 }
 
 static void prv_expect_init_timeout_cb(void *data) {
-  xSemaphoreTake(s_pb_semaphore, portMAX_DELAY);
+  pbl_sem_take(&s_pb_semaphore, PBL_FOREVER);
 
   if (s_pb_state.timer_id) {
     new_timer_delete(s_pb_state.timer_id);
@@ -1075,15 +1071,15 @@ static void prv_expect_init_timeout_cb(void *data) {
   };
   event_put(&event);
 
-  xSemaphoreGive(s_pb_semaphore);
+  pbl_sem_give(&s_pb_semaphore);
 }
 
 void put_bytes_expect_init(uint32_t timeout_ms) {
-  xSemaphoreTake(s_pb_semaphore, portMAX_DELAY);
+  pbl_sem_take(&s_pb_semaphore, PBL_FOREVER);
 
   if (s_pb_state.current_command != PutBytesIdle) {
     PBL_LOG_ERR("Called put_bytes_expect while put_bytes is not idle");
-    xSemaphoreGive(s_pb_semaphore);
+    pbl_sem_give(&s_pb_semaphore);
     return;
   }
 
@@ -1092,7 +1088,7 @@ void put_bytes_expect_init(uint32_t timeout_ms) {
   bool success = new_timer_start(s_pb_state.timer_id, timeout_ms, prv_expect_init_timeout_cb, NULL,
                                  0 /*flags*/);
   PBL_ASSERTN(success);
-  xSemaphoreGive(s_pb_semaphore);
+  pbl_sem_give(&s_pb_semaphore);
 }
 
 void put_bytes_handle_comm_session_event(const PebbleCommSessionEvent *
@@ -1104,7 +1100,6 @@ void put_bytes_handle_comm_session_event(const PebbleCommSessionEvent *
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // ReceiverImplementation
-
 
 static bool prv_receiver_contains_put_request(void) {
   return (s_pb_state.receiver.buffer[0] == PutBytesPut);
@@ -1122,8 +1117,8 @@ static void prv_receiver_reset(void) {
 static bool prv_take_lock_with_short_timeout(void) {
   // This code executes on BT02, so don't stall for too long. If the lock is taken, there is
   // probably a Put Bytes session going on already anyway.
-  const TickType_t SEMAPHORE_TIMEOUT_TICKS = milliseconds_to_ticks(25);
-  if (xSemaphoreTake(s_pb_semaphore, SEMAPHORE_TIMEOUT_TICKS) != pdTRUE) {
+  const pbl_tick_t SEMAPHORE_TIMEOUT_TICKS = pbl_ms_to_ticks(25);
+  if ((pbl_sem_take(&s_pb_semaphore, PBL_TICKS(SEMAPHORE_TIMEOUT_TICKS)) != 0)) {
     PBL_LOG_ERR("Failed to acquire the put-bytes semaphore, retry");
     return false;
   }
@@ -1166,7 +1161,7 @@ Receiver *prv_receiver_prepare(CommSession *session, const PebbleProtocolEndpoin
   bool success = false;
   if (prv_take_lock_with_short_timeout()) {
     success = prv_prepare(total_payload_length);
-    xSemaphoreGive(s_pb_semaphore);
+    pbl_sem_give(&s_pb_semaphore);
   }
 
   if (!success) {
@@ -1220,7 +1215,7 @@ void prv_receiver_write(Receiver *receiver, const uint8_t *data, size_t length) 
   s_pb_state.receiver.pos += length;
 
 finally:
-  xSemaphoreGive(s_pb_semaphore);
+  pbl_sem_give(&s_pb_semaphore);
 }
 
 void prv_receiver_cleanup(Receiver *receiver) {
@@ -1264,8 +1259,8 @@ const ReceiverImplementation g_put_bytes_receiver_impl = {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // For Unit Testing
 
-SemaphoreHandle_t put_bytes_get_semaphore(void) {
-  return s_pb_semaphore;
+struct pbl_sem * put_bytes_get_semaphore(void) {
+  return &s_pb_semaphore;
 }
 
 TimerID put_bytes_get_timer_id(void) {

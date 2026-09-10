@@ -11,13 +11,12 @@
 
 #include "applib/ui/kino/kino_reel.h"
 #include "applib/ui/menu_layer.h"
-#include "os/mutex.h"
 #include "process_management/app_install_manager.h"
 #include "process_management/pebble_process_info.h"
 #include "process_management/pebble_process_md.h"
 #include "pbl/services/process_management/app_order_storage.h"
-#include "util/attributes.h"
-#include "util/list.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/list.h"
 
 struct AppMenuDataSource;
 
@@ -80,16 +79,17 @@ typedef struct AppMenuDataSource {
   bool is_list_loaded;
 } AppMenuDataSource;
 
-//! Initalize the AppMenuDataSource
+//! Initialize the AppMenuDataSource
 void app_menu_data_source_init(AppMenuDataSource *source,
                                const AppMenuDataSourceCallbacks *handlers,
                                void *callback_context);
 
-//! Deinitalize the AppMenuDataSource
+//! Deinitialize the AppMenuDataSource
 void app_menu_data_source_deinit(AppMenuDataSource *source);
 
 //! Will load the icons for each `AppMenuNode`. Will automatically be unloaded when
 //! `app_menu_data_source_deinit` is called.
+//! @param source The AppMenuDataSource to enable icons for
 //! @param fallback_icon_id The fallback resource id that should be used if the entry does not have
 //! an icon.
 void app_menu_data_source_enable_icons(AppMenuDataSource *source, uint32_t fallback_icon_id);

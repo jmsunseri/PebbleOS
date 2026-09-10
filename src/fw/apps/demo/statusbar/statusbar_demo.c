@@ -6,7 +6,7 @@
 #include "pbl/services/i18n/i18n.h"
 #include "applib/app.h"
 #include "applib/ui/ui.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 typedef struct StatusBarDemoWindow {
   Window window;
@@ -21,7 +21,7 @@ static void prv_handle_click(ClickRecognizerRef ref, void *context) {
   app_window_stack_push(window, true);
 }
 
-static void prv_click_config_proivider(void *context) {
+static void prv_click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_SELECT, prv_handle_click);
 }
 
@@ -93,7 +93,7 @@ static Window *prv_window_create(void) {
     layer_add_child(&window->window.layer, &status_bar->layer);
   }
 
-  window_set_click_config_provider(result, prv_click_config_proivider);
+  window_set_click_config_provider(result, prv_click_config_provider);
 
   window_set_window_handlers(&window->window, &(WindowHandlers){
      .unload = prv_window_unload,

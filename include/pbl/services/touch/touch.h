@@ -24,7 +24,34 @@ void touch_init(void);
 //! When disabled, the touch sensor is only active if apps have subscribed to touch events.
 void touch_set_backlight_enabled(bool enabled);
 
-//! @return true if at least one subscriber is currently registered for touch events.
+//! Hold the touch sensor powered for the system nav feature. Unlike the
+//! backlight subscription this takes the sensor directly (no event-service
+//! subscription). Taken when the master nav pref turns on, released when off.
+void touch_set_system_hold(bool held);
+
+//! @return true when SYSTEM touch navigation is effectively enabled. Defaults
+//! to off; the shell drives it via touch_set_nav_enabled() with the
+//! conjunction of the master "Touch" pref and the "Touch Navigation" sub-pref.
+bool touch_nav_enabled(void);
+
+//! Set the system nav gate. Intended to be driven by the shell's pref system
+//! when the effective (master AND sub-pref) nav state changes.
+void touch_set_nav_enabled(bool enabled);
+
+//! @return true while the app twin's nav dispatcher is installed for the
+//! running app (system nav active, or an opted-in third-party app under the
+//! master pref). Set by the app twin's install/remove ops and cleared when the
+//! app's shared touch subscription is torn down, so a dead app cannot leave it
+//! stuck. Feeds the dispatch gate and touch-driven backlight behavior.
+bool touch_app_nav_active(void);
+
+//! Mark whether the app twin's nav dispatcher is installed.
+void touch_set_app_nav_active(bool active);
+
+//! @return true if at least one task holds an explicit raw touch subscription
+//! (touch_service_subscribe). Nav twins, the backlight subscription, and the
+//! system hold do not count; the event loop composes those separately when
+//! deciding whether the backlight follows a touch.
 bool touch_has_app_subscribers(void);
 
 //! Globally enable or disable touch. When disabled:
@@ -54,7 +81,56 @@ void touch_handle_gesture(TouchGesture gesture, int16_t x, int16_t y);
 //! Reset the touch service.
 void touch_reset(void);
 
+//! Emit a synthetic Liftoff for an in-progress touch, using the last known
+//! coordinates, so backlight hold counters and gesture state unwind cleanly
+//! when touch is torn down with a finger still on the screen. No-op if no
+//! finger is currently down. Reused by the master-pref-off transaction.
+void touch_release_active(void);
+
+//! Outcome of the session-gate decision made on a Touchdown.
+typedef struct TouchWakeGateResult {
+  //! true when the touch must not drive navigation: the interaction session
+  //! (touch_session_is_active) was inactive at Touchdown — unarmed contact on
+  //! the idle watchface.
+  bool latch;
+} TouchWakeGateResult;
+
+//! Stamp non_navigational onto a touch event, latching the Touchdown decision
+//! across the whole gesture. @p gate is only consulted on a Touchdown event;
+//! PositionUpdate and Liftoff carry the latched value.
+void touch_wake_gate_stamp(TouchEvent *event, TouchWakeGateResult gate);
+
 //! Set whether the display is rotated 180° (left-hand mode). When rotated,
 //! incoming touch coordinates are mirrored to match the rotated framebuffer
 //! before being dispatched to subscribers.
 void touch_set_rotated(bool rotated);
+
+//! Phase of an injected gesture. Stated explicitly rather than inferred from the finger state:
+//! a mid-path sample and a fresh touchdown are both "finger down", so if the service had to guess,
+//! a gesture that lost the sensor (a reset, or touch switched off) could have its next sample
+//! taken as the start of a new one, halfway along the path.
+typedef enum TouchInjectPhase {
+  TouchInjectPhase_Begin,  //!< Touchdown, claiming the sensor
+  TouchInjectPhase_Move,   //!< Position update; requires the gesture to still own the sensor
+  TouchInjectPhase_End,    //!< Liftoff, releasing the sensor
+} TouchInjectPhase;
+
+//! Inject a synthetic touch sample, as if a finger had produced it. Intended for automated input
+//! (the remote input endpoint, console commands), not for drivers.
+//!
+//! @p x and @p y are the coordinates the UI observes: the left-hand mode mirror is not applied,
+//! so callers never restate the rotation themselves.
+//!
+//! Injection is deliberate interaction, so a Begin arms the interaction session the same way a
+//! button press does; without that, contact on the idle watchface is dropped as unarmed.
+//!
+//! The sensor is owned by whoever puts a finger down first: a Begin is refused while a physical
+//! finger is down, and physical samples are ignored until the injected gesture ends. A Move or End
+//! is refused unless the gesture still owns the sensor, so a caller learns it was interrupted
+//! instead of silently starting a second gesture.
+//! @return false if the sample was dropped
+bool touch_handle_injected_update(TouchInjectPhase phase, int16_t x, int16_t y);
+
+//! @return false when a new injected gesture would be refused: touch is globally disabled, or a
+//! physical finger currently owns the sensor.
+bool touch_injection_is_available(void);

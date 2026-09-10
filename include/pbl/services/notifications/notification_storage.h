@@ -3,10 +3,9 @@
 
 #pragma once
 
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 
 #include "kernel/events.h"
-#include "util/iterator.h"
 
 void notification_storage_init(void);
 

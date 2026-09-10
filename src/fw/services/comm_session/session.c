@@ -12,7 +12,6 @@
 #include "comm/ble/kernel_le_client/app_launch/app_launch.h"
 #include "comm/bt_lock.h"
 #include "pbl/services/bluetooth/bluetooth_persistent_storage.h"
-#include "pbl/services/comm_session/protocol.h"
 #include "pbl/services/comm_session/session_remote_version.h"
 #include "pbl/services/comm_session/session_send_buffer.h"
 
@@ -24,12 +23,11 @@
 #include "pbl/services/system_task.h"
 #include "pbl/services/data_logging/dls_private.h"
 
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "syscall/syscall_internal.h"
 
 #include <stdint.h>
-#include <string.h>
 
 PBL_LOG_MODULE_DEFINE(service_comm_session, CONFIG_SERVICE_COMM_SESSION_LOG_LEVEL);
 

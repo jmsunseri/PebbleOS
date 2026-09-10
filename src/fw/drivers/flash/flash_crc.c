@@ -1,11 +1,11 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/flash.h"
+#include <pbl/drivers/flash.h>
 
 #include "kernel/pbl_malloc.h"
-#include "system/logging.h"
-#include "util/crc32.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/crc32.h"
 #include "util/legacy_checksum.h"
 
 #include <stdint.h>

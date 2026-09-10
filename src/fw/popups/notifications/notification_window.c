@@ -6,7 +6,6 @@
 #include "notifications_presented_list.h"
 #include "notification_window_private.h"
 
-#include "applib/fonts/fonts.h"
 #include "applib/ui/action_button.h"
 #include "applib/ui/action_menu_window.h"
 #include "applib/ui/app_window_stack.h"
@@ -15,16 +14,17 @@
 #include "applib/ui/dialogs/simple_dialog.h"
 #include "applib/ui/ui.h"
 #include "applib/ui/window.h"
+#include "applib/ui/window_private.h"
 #include "applib/ui/window_manager.h"
 #include "applib/ui/window_stack.h"
 #include "apps/system/timeline/peek_layer.h"
 #include "kernel/event_loop.h"
 #include "kernel/pbl_malloc.h"
 #include "kernel/ui/modals/modal_manager.h"
-#include "os/mutex.h"
+#include "pbl/kernel/mutex.h"
+#include "process_management/process_manager.h"
 #include "process_state/app_state/app_state.h"
 #include "resource/resource_ids.auto.h"
-#include "pbl/services/analytics/analytics.h"
 #include "pbl/services/bluetooth/bluetooth_persistent_storage.h"
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/evented_timer.h"
@@ -39,7 +39,9 @@
 #include "pbl/services/notifications/alerts_preferences_private.h"
 #include "pbl/services/notifications/alerts_private.h"
 #include "pbl/services/notifications/ancs/ancs_filtering.h"
+#include "pbl/services/imaging.h"
 #include "pbl/services/notifications/do_not_disturb.h"
+#include "pbl/services/notifications/notification_image.h"
 #include "pbl/services/notifications/notification_storage.h"
 #include "pbl/services/notifications/notification_types.h"
 #include "pbl/services/notifications/notifications.h"
@@ -49,10 +51,8 @@
 #include "pbl/services/timeline/timeline.h"
 #include "pbl/services/timeline/timeline_actions.h"
 #include "pbl/services/timeline/timeline_resources.h"
-#include "system/logging.h"
-#include "system/passert.h"
-#include "util/math.h"
-#include "util/trig.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/math.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -73,7 +73,7 @@ static const unsigned int QUICK_DND_HOLD_MS = 800;
 T_STATIC NotificationWindowData s_notification_window_data;
 
 T_STATIC bool s_in_use = false;
-PebbleMutex *s_notification_window_mutex;
+struct pbl_mutex s_notification_window_mutex;
 
 static bool prv_should_provide_action_menu_for_item(NotificationWindowData *data,
                                                     const TimelineItem *item);
@@ -415,6 +415,10 @@ static void prv_show_peek_for_notification(NotificationWindowData *data, Uuid *i
   // get the current layout so we can get the color and icon
   LayoutLayer *layout = swap_layer_get_current_layout(&data->swap_layer);
   if (!layout) {
+    // The backing record couldn't be read, so there is nothing to peek at. The
+    // caller declines to push the window in this case; don't strand the layer.
+    peek_layer_destroy(data->peek_layer);
+    data->peek_layer = NULL;
     return;
   }
 
@@ -636,7 +640,6 @@ static void prv_clear_if_stale_reminder(Uuid *id, NotificationType type, void *c
   const time_t now = rtc_get_time();
 
   if (stale_time <= now && window_data->is_modal) {
-    PBL_LOG_INFO("Removing stale reminder from notification popup window");
     prv_remove_notification(window_data, id, true /* close am */);
   }
 }
@@ -681,7 +684,7 @@ static bool prv_should_show_action_in_action_menu(NotificationWindowData *data,
     } else {
       // If we are in the notifications app, only show non ANCS actions. Pre iOS9 we can't really
       // know if the notification is still in the notification center or not, so we play it safe
-      // and only show non ACNS actions. Once iOS9 is more widespread we can look at updating this
+      // and only show non ANCS actions. Once iOS9 is more widespread we can look at updating this
       return !timeline_item_action_is_ancs(action);
     }
   } else { // Android
@@ -1086,6 +1089,13 @@ static void prv_window_appear(Window *window) {
     prv_pop_notification_window_after_delay(data, 0);
     return;
   }
+  if (!swap_layer_get_current_layout(&data->swap_layer)) {
+    // The entry is still listed but its record is gone, so there is nothing to
+    // draw. Self-pop rather than sit on an empty window.
+    PBL_LOG_WRN("Notification window has no layout; popping");
+    prv_pop_notification_window_after_delay(data, 0);
+    return;
+  }
   prv_setup_reminder_watchdog(data);
 
   prv_refresh_pop_timer(data);
@@ -1102,6 +1112,12 @@ static void prv_window_appear(Window *window) {
 static void prv_window_disappear(Window *window) {
   NotificationWindowData *data = window_get_user_data(window);
   prv_cleanup_timer(&data->pop_timer_id);
+#ifdef CONFIG_TOUCH
+  // A higher modal (e.g. the action menu opened via SELECT) has covered this window. Release the
+  // swap layer's touch participation so the now-focused modal owns touch and events cannot leak into
+  // this hidden notification body. The click-config-provider re-registers it on re-show.
+  swap_layer_touch_release(&data->swap_layer);
+#endif
 }
 
 static void prv_handle_presented_notif_deinit(Uuid *id, NotificationType type, void *not_used) {
@@ -1118,8 +1134,6 @@ static void prv_window_unload(Window *window) {
     return;
   }
 
-  PBL_LOG_INFO("Notification vibe: window_unload, cancelling vibes (pending_vibe=%d)",
-               data->pending_vibe);
   vibes_cancel();
   data->pending_vibe = false;
   if (data->color_preempted) {
@@ -1136,6 +1150,7 @@ static void prv_window_unload(Window *window) {
   animation_unschedule(data->peek_animation);
 
   swap_layer_deinit(&data->swap_layer);
+  notification_image_clear();
   status_bar_layer_deinit(&data->status_layer);
   notifications_presented_list_deinit(prv_handle_presented_notif_deinit, NULL);
   gbitmap_deinit(&data->dnd_icon);
@@ -1151,12 +1166,49 @@ static void prv_window_unload(Window *window) {
 // Callback Handlers
 //////////////////////
 
+#if NOTIFICATION_IMAGE_SUPPORTED
+static void prv_redraw_current_layout(void *unused) {
+  LayoutLayer *layout = swap_layer_get_current_layout(&s_notification_window_data.swap_layer);
+  if (s_in_use && layout) {
+    layer_mark_dirty(&layout->layer);
+  }
+}
+
+static void prv_imaging_notification_received(uint8_t token, GBitmap *bitmap) {
+  if (!notification_image_store(token, bitmap) || !s_in_use) {
+    return;
+  }
+  // Delivery lands on KernelMain, which is where the modal renders; the notification history app
+  // owns its window on the App task and has to mark it dirty there.
+  if (s_notification_window_data.is_modal) {
+    prv_redraw_current_layout(NULL);
+  } else {
+    process_manager_send_callback_event_to_process(PebbleTask_App, prv_redraw_current_layout, NULL);
+  }
+}
+
+static void prv_maybe_request_notification_image(LayoutLayer *layout, TimelineItem *item) {
+  GSize size;
+  uint8_t token;
+  if (!notification_layout_get_image_size(layout, &size) ||
+      !imaging_is_type_supported(ImagingImageTypeNotification) ||
+      !notification_image_claim(&item->header.id, &token)) {
+    return;
+  }
+  imaging_request_notification_image(token, ImagingFormat4BitPalette, size.w, size.h,
+                                     &item->header.id);
+}
+#endif
+
 static void prv_layout_did_appear_handler(SwapLayer *swap_layer, LayoutLayer *layout,
                                           int8_t rel_change, void *context) {
   NotificationWindowData *data = context;
   TimelineItem *n = layout_get_context(layout);
   Uuid *id = &n->header.id;
   notifications_presented_list_set_current(id);
+#if NOTIFICATION_IMAGE_SUPPORTED
+  prv_maybe_request_notification_image(layout, n);
+#endif
   if (data->first_notif_loaded || !data->is_modal) {
     layer_set_hidden(&data->action_button_layer, !prv_should_provide_action_menu_for_item(data, n));
   }
@@ -1238,13 +1290,22 @@ static StatusBarLayerMode prv_status_bar_mode_for_style(NotificationStatusBarSty
   }
 }
 
+#ifdef CONFIG_TOUCH
+// The action button layer spans the full window for drawing purposes only; it is decorative and
+// owns no touch region. Report that it contains no point so touch hit-testing falls through to the
+// notification swap layer underneath, allowing content-scroll gestures to reach it.
+static bool prv_action_button_touch_transparent(const Layer *layer, const GPoint *point) {
+  return false;
+}
+#endif
+
 static void prv_init_notification_window(bool is_modal) {
   NotificationWindowData *data = &s_notification_window_data;
 
   // init_notification_window() can be called from KernelMain when displaying an incoming
   // notification and also from the notifications.c application task. Grab a mutex here so
   // that we don't ever get two instances of it at a time.
-  mutex_lock(s_notification_window_mutex);
+  pbl_mutex_lock(&s_notification_window_mutex, PBL_FOREVER);
   if (s_in_use) {
     goto fail;
   }
@@ -1273,6 +1334,13 @@ static void prv_init_notification_window(bool is_modal) {
       .unload = prv_window_unload,
   });
   window_set_user_data(window, data);
+
+#ifdef CONFIG_TOUCH
+  // The notification body scrolls via the Tier-1 swap layer, so opt this window out of the Tier-2
+  // button bridge; that leaves the swap layer as the sole touch handler and stops a stray tap
+  // elsewhere from emulating a button.
+  window_set_touch_bridge_disabled(window, true);
+#endif
 
   // Initialize some variables early
   Layer *root_layer = window_get_root_layer(window);
@@ -1317,6 +1385,9 @@ static void prv_init_notification_window(bool is_modal) {
   layer_init(&data->action_button_layer, &data->window.layer.bounds);
   data->action_button_layer.update_proc = action_button_update_proc;
   layer_add_child(root_layer, &data->action_button_layer);
+#ifdef CONFIG_TOUCH
+  layer_set_contains_point_override(&data->action_button_layer, prv_action_button_touch_transparent);
+#endif
 
   layer_set_hidden((Layer *)&data->action_button_layer, true);
 
@@ -1333,7 +1404,7 @@ static void prv_init_notification_window(bool is_modal) {
   notifications_presented_list_init();
 
 fail:
-  mutex_unlock(s_notification_window_mutex);
+  pbl_mutex_unlock(&s_notification_window_mutex);
 }
 
 void notification_window_init(bool is_modal) {
@@ -1364,7 +1435,7 @@ void notification_window_add_notification_by_id(Uuid *id) {
   prv_notification_window_add_notification(id, NotificationMobile);
 }
 
-//! The animate mode slides the notificaiton in from the top as if it was a new notification.
+//! The animate mode slides the notification in from the top as if it was a new notification.
 void notification_window_focus_notification(Uuid *id, bool animated) {
   NotificationWindowData *data = &s_notification_window_data;
 
@@ -1397,13 +1468,19 @@ void notification_window_focus_notification(Uuid *id, bool animated) {
 }
 
 void notification_window_service_init(void) {
-  s_notification_window_mutex = mutex_create();
+  pbl_mutex_init(&s_notification_window_mutex);
   s_notification_window_data.pop_timer_id = EVENTED_TIMER_INVALID_ID;
+  // Unconditional: prv_window_unload clears the slot on every platform, so the lock has to exist
+  // even where images are never fetched.
+  notification_image_service_init();
+#if NOTIFICATION_IMAGE_SUPPORTED
+  imaging_register_handler(ImagingImageTypeNotification, prv_imaging_notification_received);
+#endif
 }
 
 
 //////////////////
-// Event Handers
+// Event Handlers
 //////////////////
 
 static void prv_handle_action_result(PebbleSysNotificationActionResult *action_result) {
@@ -1444,7 +1521,7 @@ static void prv_handle_notification_acted_upon(Uuid *id) {
 }
 
 static void prv_do_notification_vibe(NotificationWindowData *data, Uuid *id) {
-  PBL_LOG_INFO("Notification vibe: do_vibe called");
+  PBL_LOG_DBG("Notification vibe: do_vibe called");
   TimelineItem *item = prv_get_current_notification(data);
   // Check if the current notification is the one we want to vibe for - if not then reload to make
   // sure it is, before reading the attributes.
@@ -1460,8 +1537,8 @@ static void prv_do_notification_vibe(NotificationWindowData *data, Uuid *id) {
   if (vibeDurations && vibeDurations->num_values > 0) {
     VibePattern patt;
 
-    PBL_LOG_INFO("Notification vibe: using CUSTOM pattern from phone, %" PRIu16 " segments",
-                 vibeDurations->num_values);
+    PBL_LOG_DBG("Notification vibe: using CUSTOM pattern from phone, %" PRIu16 " segments",
+                vibeDurations->num_values);
 
     patt.durations = vibeDurations->values;
     patt.num_segments = vibeDurations->num_values;
@@ -1471,8 +1548,8 @@ static void prv_do_notification_vibe(NotificationWindowData *data, Uuid *id) {
     VibeScore *score = vibe_client_get_score(VibeClient_Notifications);
     if (score) {
       VibeScoreId id = alerts_preferences_get_vibe_score_for_client(VibeClient_Notifications);
-      PBL_LOG_INFO("Notification vibe: using alerts preferences (%d, %s)",
-                   (int)id, vibe_score_info_get_name(id));
+      PBL_LOG_DBG("Notification vibe: using alerts preferences (%d, %s)",
+                  (int)id, vibe_score_info_get_name(id));
 
       vibe_score_do_vibe(score);
       vibe_score_destroy(score);
@@ -1516,7 +1593,13 @@ static void prv_handle_notification_added_common(Uuid *id, NotificationType type
   if (is_new) {
     data->first_notif_loaded = false;
     prv_show_peek_for_notification(data, id, true /* is_first_notification */);
-    modal_window_push(&data->window, NOTIFICATION_PRIORITY, true /* animated */);
+    if (swap_layer_get_current_layout(&data->swap_layer)) {
+      modal_window_push(&data->window, NOTIFICATION_PRIORITY, true /* animated */);
+    } else {
+      // No layout means the backing record couldn't be read. Pushing anyway puts
+      // an empty window on screen (white, no vibe) that only Back can dismiss.
+      PBL_LOG_WRN("No layout for notification; not showing the window");
+    }
   } else if (in_view) {
     // Only focus the new notification if it becomes the new front of the list.
     // In DND mode notifications can get inserted into the middle of the list and we don't
@@ -1525,7 +1608,7 @@ static void prv_handle_notification_added_common(Uuid *id, NotificationType type
       const bool should_animate = !do_not_disturb_is_active();
       notification_window_focus_notification(id, should_animate);
     } else {
-      // If we are inserting into the middle of this list, just reaload the swap layer so the
+      // If we are inserting into the middle of this list, just reload the swap layer so the
       // number of notifications displayed is correct
       prv_reload_swap_layer(data);
     }

@@ -9,10 +9,10 @@
 #include "apps/prf/mfg_test_result.h"
 #include "kernel/pbl_malloc.h"
 #include "board/board.h"
-#include "drivers/pmic/npm1300.h"
+#include <pbl/drivers/pmic/npm1300.h>
 #include "process_management/pebble_process_md.h"
 #include "process_state/app_state/app_state.h"
-#include "drivers/audio.h"
+#include <pbl/drivers/audio.h>
 
 typedef struct {
   Window window;
@@ -35,7 +35,7 @@ static void prv_audio_trans_handler(uint32_t *free_size) {
 
 static void prv_play_audio(void) {
   audio_start(AUDIO, prv_audio_trans_handler);
-  audio_set_volume(AUDIO, 100);
+  audio_set_volume(AUDIO, 30);
 }
 
 static void prv_result_confirmed(ClickRecognizerRef recognizer, void *context) {

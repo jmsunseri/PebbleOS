@@ -2,8 +2,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "delay.h"
-#include "util/attributes.h"
-#include "util/units.h"
+#include "pbl/util/attributes.h"
 
 #ifdef CONFIG_SOC_NRF52
 #include <drivers/nrfx_common.h>
@@ -11,8 +10,6 @@
 #elif defined(CONFIG_SOC_SF32LB52)
 #include <bf0_hal.h>
 #endif
-
-#include <inttypes.h>
 
 #ifdef CONFIG_SOC_NRF52
 void NOINLINE delay_us(uint32_t us) {

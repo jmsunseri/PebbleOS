@@ -3,7 +3,7 @@
 
 #pragma once
 #include "util/dict.h"
-#include "util/list.h"
+#include "pbl/util/list.h"
 
 //! @addtogroup Foundation
 //! @{
@@ -214,7 +214,7 @@ typedef void (*AppMessageInboxReceived)(DictionaryIterator *iterator, void *cont
 
 //! Called after an incoming message is dropped.
 //!
-//! \param[in] result
+//! \param[in] reason
 //!   The reason why the message was dropped.  Some possibilities include \ref APP_MSG_BUSY and
 //!   \ref APP_MSG_BUFFER_OVERFLOW.
 //!
@@ -245,7 +245,7 @@ typedef void (*AppMessageOutboxSent)(DictionaryIterator *iterator, void *context
 //!   the iterator cannot be modified or saved off as the library will re-open the dictionary with dict_begin() after
 //!   this callback returns.
 //!
-//! \param[in] result
+//! \param[in] reason
 //!   The result of the operation.  Some possibilities for the value include \ref APP_MSG_SEND_TIMEOUT,
 //!   \ref APP_MSG_SEND_REJECTED, \ref APP_MSG_NOT_CONNECTED, \ref APP_MSG_APP_NOT_RUNNING, and the combination
 //!   `(APP_MSG_NOT_CONNECTED | APP_MSG_APP_NOT_RUNNING)`.
@@ -331,7 +331,7 @@ void app_message_deregister_callbacks(void);
 
 // -------- AppMessage Lifecycle ----------------------------------------------------------------------------------- //
 
-//! Programatically determine the inbox size maximum in the current configuration.
+//! Programmatically determine the inbox size maximum in the current configuration.
 //!
 //! \return The inbox size maximum on this firmware.
 //!
@@ -340,7 +340,7 @@ void app_message_deregister_callbacks(void);
 //!
 uint32_t app_message_inbox_size_maximum(void);
 
-//! Programatically determine the outbox size maximum in the current configuration.
+//! Programmatically determine the outbox size maximum in the current configuration.
 //!
 //! \return The outbox size maximum on this firmware.
 //!

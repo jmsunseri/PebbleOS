@@ -5,7 +5,7 @@
 
 #include "display.h"
 
-#include "drivers/button_id.h"
+#include <pbl/drivers/button_id.h>
 #include "debug/power_tracking.h"
 
 #include <stdint.h>
@@ -26,7 +26,7 @@
 //! Guaranteed invalid IRQ priority
 #define IRQ_PRIORITY_INVALID (1 << __NVIC_PRIO_BITS)
 
-// This is generated in order to faciliate the check within the IRQ_MAP macro below
+// This is generated in order to facilitate the check within the IRQ_MAP macro below
 enum {
 #define IRQ_DEF(num, irq) IS_VALID_IRQ__##irq,
 #if defined(CONFIG_SOC_NRF52)
@@ -128,6 +128,11 @@ typedef struct {
   /////////////////////////////////////////////////////////////////////////////
   const uint32_t ambient_light_dark_threshold;
   const uint32_t ambient_k_delta_threshold;
+  // Raw-count -> lux conversion: lux = (level - offset) * num / den.
+  // den == 0 means no conversion available for this board.
+  const uint32_t ambient_light_lux_dark_offset;
+  const uint32_t ambient_light_lux_num;
+  const uint32_t ambient_light_lux_den;
   const OutputConfig photo_en;
   const bool als_always_on;
 
@@ -204,6 +209,6 @@ typedef const struct AudioDevice AudioDevice;
 void board_early_init(void);
 void board_init(void);
 
-#include "drivers/i2c/definitions.h"
+#include <pbl/drivers/i2c/definitions.h>
 
 #include "board_definitions.h"

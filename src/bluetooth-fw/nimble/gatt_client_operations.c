@@ -7,7 +7,7 @@
 
 #include <host/ble_gatt.h>
 #include <host/ble_hs.h>
-#include <system/logging.h>
+#include <pbl/logging/logging.h>
 
 PBL_LOG_MODULE_DECLARE(bt, CONFIG_BT_LOG_LEVEL);
 
@@ -32,7 +32,7 @@ static int prv_gatt_write_event_cb(uint16_t conn_handle, const struct ble_gatt_e
               error->att_handle, error->status);
   }
 
-  GattClientOpWriteReponse resp = {
+  GattClientOpWriteResponse resp = {
       .hdr = {
           .type = GattClientOpResponseWrite,
           .error_code = prv_gatt_error_code(error->status),
@@ -49,7 +49,7 @@ static int prv_gatt_read_event_cb(uint16_t conn_handle, const struct ble_gatt_er
               error->att_handle, error->status);
   }
 
-  GattClientOpReadReponse resp = {
+  GattClientOpReadResponse resp = {
       .hdr =
           {
               .type = GattClientOpResponseRead,

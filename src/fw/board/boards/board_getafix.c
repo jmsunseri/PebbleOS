@@ -3,11 +3,8 @@
 
 #include "board/board.h"
 #include "board/splash.h"
-#include "drivers/sf32lb52/debounced_button_definitions.h"
-#include "drivers/watchdog.h"
+#include <pbl/drivers/sf32lb52/debounced_button_definitions.h>
 #include "system/passert.h"
-
-#include "bf0_hal.h"
 
 static UARTDeviceState s_dbg_uart_state = {
   .huart = {
@@ -281,14 +278,14 @@ static const LIS2DW12Config s_lis2dw12_config = {
     .state = &s_lis2dw12_state,
     .i2c = {
         .bus = &s_i2c_bus_1,
-#ifdef CONFIG_BOARD_GETAFIX_EVT
-        .address = 0x18,
-#else
         .address = 0x19,
-#endif
     },
     .int1 = {
       .peripheral = hwp_gpio1,
+      .gpio_pin = 26,
+    },
+    .int1_in = {
+      .gpio = hwp_gpio1,
       .gpio_pin = 26,
     },
     .axis_map = {
@@ -378,10 +375,6 @@ static const TouchSensor s_touch_cst816 = {
         .gpio_pin = 28,
         .active_high = false,
     },
-    .max_x = 260,
-    .max_y = 260,
-    .invert_x_axis = false,
-    .invert_y_axis = true,
 };
 
 const TouchSensor *CST816 = &s_touch_cst816;
@@ -492,8 +485,13 @@ const BoardConfigPower BOARD_CONFIG_POWER = {
 
 const BoardConfig BOARD_CONFIG = {
   .backlight_on_percent = 25,
-  .ambient_light_dark_threshold = 150,
-  .ambient_k_delta_threshold = 25,
+  .ambient_light_dark_threshold = 800,
+  .ambient_k_delta_threshold = 100,
+  // Bench-calibrated on 1 DVT2 unit, fit above 4500 lux; readings below
+  // ~4000 lux deviated from the fit on that unit and need a re-measure.
+  .ambient_light_lux_dark_offset = 0,
+  .ambient_light_lux_num = 50,
+  .ambient_light_lux_den = 517,
 };
 
 const BoardConfigButton BOARD_CONFIG_BUTTON = {
@@ -532,8 +530,13 @@ static const MicDevice mic_device = {
     },
     .pdm_dma_irq = DMAC1_CH5_IRQn,
     .pdm_irq = PDM1_IRQn,
-    .pdm_irq_priority = 5, 
+    .pdm_irq_priority = 5,
+#ifdef CONFIG_MFG
+    // MFG mic test needs stereo capture to verify both microphones
+    .channels = 2,
+#else
     .channels = 1,
+#endif
     .sample_rate = 16000,
     .channel_depth = 16,
 };

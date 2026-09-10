@@ -10,28 +10,27 @@
 #include <string.h>
 
 #include "console/prompt.h"
-#include "drivers/flash.h"
-#include "drivers/rtc.h"
-#include "drivers/task_watchdog.h"
+#include <pbl/drivers/flash.h>
+#include <pbl/drivers/rtc.h>
+#include <pbl/drivers/task_watchdog.h>
 #include "flash_region/filesystem_regions.h"
-#include "flash_region/flash_region.h"
 #include "kernel/pbl_malloc.h"
 #include "kernel/pebble_tasks.h"
 #include "kernel/util/sleep.h"
-#include "os/mutex.h"
+#include "pbl/kernel/mutex.h"
 #include "pbl/services/analytics/analytics.h"
 #include "pbl/services/filesystem/flash_translation.h"
 #include "system/hexdump.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 #include "util/crc8.h"
 #include "util/legacy_checksum.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 
 PBL_LOG_MODULE_DEFINE(service_filesystem, CONFIG_SERVICE_FILESYSTEM_LOG_LEVEL);
 
-static PebbleRecursiveMutex *s_pfs_mutex = NULL;
+static PBL_MUTEX_DEFINE(s_pfs_mutex);
 
 #define IS_FILE_TYPE(file_type, type)   ((file_type) == (type))
 
@@ -453,12 +452,15 @@ static status_t write_pg_header(PageHeader *hdr, uint16_t pg) {
   return (S_SUCCESS);
 }
 
+static status_t unlink_flash_file(uint16_t page);
+
 // note: the goal here is to do as few flash reads as possible
 // while scanning the flash to find a given file.
 static status_t locate_flash_file(const char *name, uint16_t *page) {
   const int file_namelen_offset = FILEHEADER_OFFSET +
       offsetof(FileHeader, file_namelen);
   uint8_t namelen = strlen(name);
+  uint16_t corrupt_pg = INVALID_PAGE;
 
   for (uint16_t pg = 0; pg < s_pfs_page_count; pg++) {
     PageHeader pg_hdr;
@@ -481,8 +483,18 @@ static status_t locate_flash_file(const char *name, uint16_t *page) {
       if ((memcmp(name, file_name, namelen) == 0) && (!is_tmp_file(pg))) {
 
         if (read_header(pg, &pg_hdr, &file_hdr) == HdrCrcCorrupt) {
-          PBL_LOG_WRN("%d: CRC corrupt", pg);
+          PBL_LOG_WRN("CRC corrupt for page %d", pg);
+          if (corrupt_pg == INVALID_PAGE) {
+            corrupt_pg = pg;
+          }
           continue;
+        }
+
+        if (corrupt_pg != INVALID_PAGE) {
+          // A valid copy exists, so the corrupt match is a stale leftover:
+          // unlink it so it no longer shadows scans and can be reclaimed.
+          PBL_LOG_WRN("Unlinking stale corrupt copy of '%s' (page %u)", name, corrupt_pg);
+          unlink_flash_file(corrupt_pg);
         }
 
         *page = pg;
@@ -542,7 +554,7 @@ static void update_last_written_page(void) {
         prv_page_to_flash_offset(pg) + offsetof(PageHeader, last_written));
     if (hdr.last_written == LAST_WRITTEN_TAG) {
       s_last_page_written = pg;
-      PBL_LOG_INFO("Last written page %d", (int)s_last_page_written);
+      PBL_LOG_DBG("Last written page %d", (int)s_last_page_written);
       return;
     }
   }
@@ -705,7 +717,7 @@ static status_t find_free_page(uint16_t *free_page, bool use_gc_allocator,
   // we should now be processing on a sector aligned boundary
   PBL_ASSERTN((start_pg % PFS_PAGES_PER_ERASE_SECTOR) == 0);
 
-  // if we could not find a free page in the sector we were previosuly using
+  // if we could not find a free page in the sector we were previously using
   // we need to scan through the erase regions and either perform some garbage
   // collection or find an erased page in another erase region
   if (next_page == INVALID_PAGE) {
@@ -747,7 +759,7 @@ static status_t find_free_page(uint16_t *free_page, bool use_gc_allocator,
 
 //! Note: expects that the caller does _not_ hold the pfs mutex
 //! Note: If pages are already pre-erased on the FS, this routine will return
-//!  very quickly. If we need to do erases, it will take longer becauses this
+//!  very quickly. If we need to do erases, it will take longer because this
 //!  operation can take seconds to complete on certain flash parts
 //!
 //! @param file_size - The amount of file space to erase
@@ -762,9 +774,9 @@ static void pfs_prepare_for_file_creation(uint32_t file_size,
 
   uint16_t last_written_page = s_last_page_written;
   while ((pages_to_find > 0) && (free_page != INVALID_PAGE)) {
-    mutex_lock_recursive(s_pfs_mutex);
+    pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
     find_free_page(&free_page, false, false);
-    mutex_unlock_recursive(s_pfs_mutex);
+    pbl_mutex_unlock(&s_pfs_mutex);
     // TODO: might be nice to only sleep here if we had to perform GC as part
     // of finding a free page
     if ((pages_to_find % 4) == 0) {
@@ -778,9 +790,9 @@ static void pfs_prepare_for_file_creation(uint32_t file_size,
     }
   }
 
-  mutex_lock_recursive(s_pfs_mutex);
+  pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
   s_last_page_written = last_written_page; // reset our tracker
-  mutex_unlock_recursive(s_pfs_mutex);
+  pbl_mutex_unlock(&s_pfs_mutex);
 }
 
 // In the future, the next_page field may be updated dynamically (i.e to resize
@@ -889,7 +901,7 @@ static status_t create_flash_file(File *f) {
     }
   }
 
-  // we have succesfully allocated space for the file, so add file specific info
+  // we have successfully allocated space for the file, so add file specific info
   f->start_page = f->curr_page = start_page;
 
   FileHeader file_hdr;
@@ -989,6 +1001,8 @@ typedef enum {
   NoFDAvail = -1
 } AvailFdStatus;
 
+//! @param name the name of the file to look for
+//! @param[out] fdp populated with the fd that was found or is available
 //! @param is_tmp specified to indicate whether or not you are looking for
 //!        a tmp file
 static AvailFdStatus get_avail_fd(const char *name, int *fdp, bool is_tmp) {
@@ -1034,20 +1048,20 @@ static AvailFdStatus get_avail_fd(const char *name, int *fdp, bool is_tmp) {
  */
 
 size_t pfs_get_file_size(int fd) {
-  mutex_lock_recursive(s_pfs_mutex);
+  pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
 
   size_t res = 0;
   if (FD_VALID(fd)) {
     res = PFS_FD(fd).file.file_size;
   }
 
-  mutex_unlock_recursive(s_pfs_mutex);
+  pbl_mutex_unlock(&s_pfs_mutex);
   return (res);
 }
 
 int pfs_read(int fd, void *buf_ptr, size_t size) {
   uint8_t *buf = buf_ptr;
-  mutex_lock_recursive(s_pfs_mutex);
+  pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
 
   int res = E_UNKNOWN;
   if (!FD_VALID(fd) || (buf == NULL) || (size == 0)) {
@@ -1102,12 +1116,12 @@ int pfs_read(int fd, void *buf_ptr, size_t size) {
 
   res = bytes_read;
 cleanup:
-  mutex_unlock_recursive(s_pfs_mutex);
+  pbl_mutex_unlock(&s_pfs_mutex);
   return (res);
 }
 
 int pfs_seek(int fd, int offset, FSeekType seek_type) {
-  mutex_lock_recursive(s_pfs_mutex);
+  pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
   int res = E_UNKNOWN;
   if (!FD_VALID(fd)) {
     res = E_INVALID_ARGUMENT;
@@ -1135,13 +1149,13 @@ int pfs_seek(int fd, int offset, FSeekType seek_type) {
   }
 
 cleanup:
-  mutex_unlock_recursive(s_pfs_mutex);
+  pbl_mutex_unlock(&s_pfs_mutex);
   return (res);
 }
 
 int pfs_write(int fd, const void *buf_ptr, size_t size) {
   const uint8_t *buf = buf_ptr;
-  mutex_lock_recursive(s_pfs_mutex);
+  pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
   int res = E_UNKNOWN;
   if (!FD_VALID(fd) || (buf == NULL) || (size == 0)) {
     res = E_INVALID_ARGUMENT;
@@ -1192,7 +1206,7 @@ int pfs_write(int fd, const void *buf_ptr, size_t size) {
 
   res = bytes_written;
 cleanup:
-  mutex_unlock_recursive(s_pfs_mutex);
+  pbl_mutex_unlock(&s_pfs_mutex);
   return (res);
 }
 
@@ -1348,7 +1362,7 @@ static bool watch_list_find_str(ListNode *node, void *data) {
 
 PFSCallbackHandle pfs_watch_file(const char* filename, PFSFileChangedCallback callback,
                                  uint8_t event_flags, void* data) {
-  mutex_lock_recursive(s_pfs_mutex);
+  pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
 
   PFSFileChangedCallbackNode *node = kernel_malloc_check(sizeof(PFSFileChangedCallbackNode));
   *node = (PFSFileChangedCallbackNode) {
@@ -1366,13 +1380,13 @@ PFSCallbackHandle pfs_watch_file(const char* filename, PFSFileChangedCallback ca
   }
 
   s_head_callback_node_list = list_prepend(s_head_callback_node_list, &node->list_node);
-  mutex_unlock_recursive(s_pfs_mutex);
+  pbl_mutex_unlock(&s_pfs_mutex);
 
   return node;
 }
 
 void pfs_unwatch_file(PFSCallbackHandle cb_handle) {
-  mutex_lock_recursive(s_pfs_mutex);
+  pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
 
   PFSFileChangedCallbackNode *callback_node = (PFSFileChangedCallbackNode *)cb_handle;
 
@@ -1390,7 +1404,7 @@ void pfs_unwatch_file(PFSCallbackHandle cb_handle) {
 
   kernel_free(callback_node);
 
-  mutex_unlock_recursive(s_pfs_mutex);
+  pbl_mutex_unlock(&s_pfs_mutex);
 }
 
 // IMPORTANT: This call assumes that the caller has already grabbed s_pfs_mutex
@@ -1406,7 +1420,7 @@ static void prv_invoke_watch_file_callbacks(const char* file_name, uint8_t event
 }
 
 status_t pfs_close(int fd) {
-  mutex_lock_recursive(s_pfs_mutex);
+  pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
 
   int res = E_UNKNOWN;
   if (!FD_VALID(fd)) {
@@ -1451,12 +1465,12 @@ status_t pfs_close(int fd) {
 
   res = S_SUCCESS;
 cleanup:
-  mutex_unlock_recursive(s_pfs_mutex);
+  pbl_mutex_unlock(&s_pfs_mutex);
   return (res);
 }
 
 status_t pfs_close_and_remove(int fd) {
-  mutex_lock_recursive(s_pfs_mutex);
+  pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
 
   status_t res = E_UNKNOWN;
   if (!FD_VALID(fd)) {
@@ -1472,7 +1486,7 @@ status_t pfs_close_and_remove(int fd) {
     }
   }
 
-  mutex_unlock_recursive(s_pfs_mutex);
+  pbl_mutex_unlock(&s_pfs_mutex);
   return (res);
 }
 
@@ -1485,7 +1499,7 @@ status_t pfs_remove(const char *name) {
     return (E_INVALID_ARGUMENT);
   }
 
-  mutex_lock_recursive(s_pfs_mutex);
+  pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
   uint16_t page = 0;
   int fd;
   status_t rv = get_avail_fd(name, &fd, false);
@@ -1504,14 +1518,14 @@ status_t pfs_remove(const char *name) {
   // IMPORTANT: prv_invoke_watch_file_callbacks assumes that we already have s_pfs_mutex
   prv_invoke_watch_file_callbacks(name, FILE_CHANGED_EVENT_REMOVED);
 cleanup:
-  mutex_unlock_recursive(s_pfs_mutex);
+  pbl_mutex_unlock(&s_pfs_mutex);
   return (rv);
 }
 
 PFSFileListEntry *pfs_create_file_list(PFSFilenameTestCallback callback) {
   ListNode *head = NULL;
 
-  mutex_lock_recursive(s_pfs_mutex);
+  pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
 
   const int file_namelen_offset = FILEHEADER_OFFSET + offsetof(FileHeader, file_namelen);
 
@@ -1552,7 +1566,7 @@ PFSFileListEntry *pfs_create_file_list(PFSFilenameTestCallback callback) {
     strcpy(entry->name, file_name);
     head = list_insert_before(head, &entry->list_node);
   }
-  mutex_unlock_recursive(s_pfs_mutex);
+  pbl_mutex_unlock(&s_pfs_mutex);
   return (PFSFileListEntry *)head;
 }
 
@@ -1568,7 +1582,7 @@ void pfs_delete_file_list(PFSFileListEntry *head) {
 
 // PBL-19098 Refactor this to share code with pfs_create_file_list
 void pfs_remove_files(PFSFilenameTestCallback callback) {
-  mutex_lock_recursive(s_pfs_mutex);
+  pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
 
   const int file_namelen_offset = FILEHEADER_OFFSET + offsetof(FileHeader, file_namelen);
 
@@ -1607,7 +1621,7 @@ void pfs_remove_files(PFSFilenameTestCallback callback) {
     if (rv >= FDAlreadyLoaded) { // the file is in the cache
       if (rv == FDBusy) {
         PBL_CROAK("Cannot delete %s, it is currently in use",
-                  s_pfs_avail_fd[fd].file.name);
+                  PFS_FD(fd).file.name);
       }
       mark_fd_free(fd);
     }
@@ -1616,7 +1630,7 @@ void pfs_remove_files(PFSFilenameTestCallback callback) {
     // IMPORTANT: prv_invoke_watch_file_callbacks assumes that we already have s_pfs_mutex
     prv_invoke_watch_file_callbacks(file_name, FILE_CHANGED_EVENT_REMOVED);
   }
-  mutex_unlock_recursive(s_pfs_mutex);
+  pbl_mutex_unlock(&s_pfs_mutex);
 }
 
 #define MAX_PAGE_CACHE_ENTRIES    10 // 6 bytes per entry
@@ -1744,9 +1758,13 @@ static NOINLINE bool file_found_in_cache(const char *name, uint8_t op_flags, int
       // make sure the header is not corrupted
       PageHeader pg_hdr;
       FileHeader file_hdr;
-      if ((res = read_header(file->start_page, &pg_hdr, &file_hdr)) !=
-          PageAndFileHdrValid) {
-        mark_fd_free(fd); // file has been corrupted so clear fd
+      if (read_header(file->start_page, &pg_hdr, &file_hdr) != PageAndFileHdrValid) {
+        // Evict the entry and fall back to the flash scan (res stays >= 0 so
+        // the caller reuses this fd slot): the check may have hit a transient
+        // read glitch, and the scan can still find a valid copy.
+        PBL_LOG_WRN("Cached header check failed for '%s' (page %u), rescanning",
+                    name, file->start_page);
+        mark_fd_free(fd);
         goto cleanup;
       }
     }
@@ -1778,9 +1796,9 @@ static NOINLINE status_t pfs_open_handle_create_request(int fd, uint8_t file_typ
     FileDesc *file_desc = &PFS_FD(fd);
     uint8_t curr_status = file_desc->fd_status;
     file_desc->fd_status = FD_STATUS_IN_USE;
-    mutex_unlock_recursive(s_pfs_mutex);
+    pbl_mutex_unlock(&s_pfs_mutex);
     pfs_prepare_for_file_creation(start_size, 0 /* no timeout */);
-    mutex_lock_recursive(s_pfs_mutex);
+    pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
     file_desc->fd_status = curr_status;
   }
 
@@ -1862,7 +1880,7 @@ int pfs_open(const char *name, uint8_t op_flags, uint8_t file_type,
     return (E_INVALID_ARGUMENT);
   }
 
-  mutex_lock_recursive(s_pfs_mutex);
+  pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
   int res;
   // if the file is in the cache or we encountered a failure we are done
   if (file_found_in_cache(name, op_flags, &res) || (res < S_SUCCESS)) {
@@ -1887,7 +1905,7 @@ cleanup:
     prv_update_gc_reserved_region();
   }
 
-  mutex_unlock_recursive(s_pfs_mutex);
+  pbl_mutex_unlock(&s_pfs_mutex);
   return (res);
 }
 
@@ -1935,7 +1953,9 @@ static status_t copy_or_recover_gc_data(int fd, GCData *gcdata, bool do_copy) {
   for (uint16_t pg = 0; pg < PFS_PAGES_PER_ERASE_SECTOR; pg++) {
     uint32_t base_addr = prv_page_to_flash_offset(sector_start_page + pg);
 
-    uint32_t data_len;
+    // Default to 0 so a failed recover-path pfs_read below skips the copy loop
+    // instead of writing an uninitialized length's worth of garbage to flash.
+    uint32_t data_len = 0;
     PageHeader hdr;
     if (do_copy) {
       // if the sector is not active we only need to copy the page header info
@@ -2064,10 +2084,6 @@ done:
 }
 
 status_t pfs_init(bool run_filesystem_check) {
-  if (s_pfs_mutex == NULL) {
-    s_pfs_mutex = mutex_create_recursive();
-  }
-
   for (int fd = FD_INDEX_OFFSET; fd < FD_INDEX_OFFSET+MAX_FD_HANDLES; fd++) {
     PFS_FD(fd) = (FileDesc) { .fd_status = FD_STATUS_FREE };
   }
@@ -2116,7 +2132,7 @@ status_t pfs_init(bool run_filesystem_check) {
 
 void pfs_format(bool write_erase_headers) {
   PBL_LOG_INFO("FS-Format Start");
-  mutex_lock_recursive(s_pfs_mutex);
+  pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
 
   for (int i = FD_INDEX_OFFSET; i < FD_INDEX_OFFSET+PFS_FD_SET_SIZE; i++) {
     mark_fd_free(i);
@@ -2130,7 +2146,7 @@ void pfs_format(bool write_erase_headers) {
     prv_write_erased_header_on_page_range(0, s_pfs_page_count, 1);
   }
 
-  mutex_unlock_recursive(s_pfs_mutex);
+  pbl_mutex_unlock(&s_pfs_mutex);
   PBL_LOG_INFO("FS-Format Done");
 }
 
@@ -2180,7 +2196,7 @@ uint32_t pfs_crc_calculate_file(int fd, uint32_t offset, uint32_t num_bytes) {
   legacy_defective_checksum_init(&checksum);
 
   // grab the pfs lock to prevent lock inversion with crc lock
-  mutex_lock_recursive(s_pfs_mutex);
+  pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
 
   // go to offset
   pfs_seek(fd, offset, FSeekSet);
@@ -2197,7 +2213,7 @@ uint32_t pfs_crc_calculate_file(int fd, uint32_t offset, uint32_t num_bytes) {
   legacy_defective_checksum_update(&checksum, buffer, num_bytes);
   uint32_t crc = legacy_defective_checksum_finish(&checksum);
 
-  mutex_unlock_recursive(s_pfs_mutex);
+  pbl_mutex_unlock(&s_pfs_mutex);
 
   return (crc);
 }
@@ -2213,9 +2229,9 @@ void pbl_analytics_external_collect_pfs_stats(void) {
 
 // TODO: Remove once we figure out PBL-20973
 void pfs_collect_diagnostic_data(int fd, void *diagnostic_buf, size_t diagnostic_buf_len)  {
-  mutex_lock_recursive(s_pfs_mutex);
+  pbl_mutex_lock(&s_pfs_mutex, PBL_FOREVER);
   memcpy(diagnostic_buf, &PFS_FD(fd), MIN(diagnostic_buf_len, sizeof(FileDesc)));
-  mutex_unlock_recursive(s_pfs_mutex);
+  pbl_mutex_unlock(&s_pfs_mutex);
 }
 
 // pass in either 0 or 1 to as argument

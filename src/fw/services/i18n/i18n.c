@@ -34,12 +34,11 @@
 #include "kernel/event_loop.h"
 #include "kernel/pbl_malloc.h"
 #include "resource/resource.h"
-#include "pbl/services/filesystem/pfs.h"
 #include "shell/normal/language_ui.h"
 #include "shell/prefs.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/list.h"
+#include "pbl/util/list.h"
 
 PBL_LOG_MODULE_DEFINE(service_i18n, CONFIG_SERVICE_I18N_LOG_LEVEL);
 
@@ -96,9 +95,11 @@ static uint32_t prv_next_index(uint32_t curidx, uint32_t hashsize, uint32_t step
 }
 
 //! Lookup a translated string.
-//! @param rlen[out] Can be NULL. If non-null will be populated with the length of the translated
+//! @param msgid The message id (original string) to look up.
+//! @param db The domain binding containing the translations.
+//! @param[out] rlen Can be NULL. If non-null will be populated with the length of the translated
 //!                  string.
-//! @param rstring[out] Can be NULL. If non-null this buffer will be populated with the translated
+//! @param[out] rstring Can be NULL. If non-null this buffer will be populated with the translated
 //!                     string. This buffer will be null-terminated.
 //! @param rstring_len The length of the rstring buffer.
 static void prv_lookup(const char *msgid, struct DomainBinding *db,
@@ -224,7 +225,7 @@ static bool prv_get_metadata(struct DomainBinding *db) {
   }
 
   success = true;
-  PBL_LOG_INFO("language: %s, version %d", db->iso_locale, db->lang_version);
+  PBL_LOG_DBG("language: %s, version %d", db->iso_locale, db->lang_version);
 
 cleanup:
   kernel_free(header);
@@ -455,6 +456,10 @@ fail:
 }
 
 void i18n_get_with_buffer(const char *msgid, char *buffer, size_t length) {
+  if (length == 0) {
+    // Nothing fits, and buffer[length - 1] below would wrap to an OOB write.
+    return;
+  }
   if (msgid == NULL || msgid[0] == 0) {
     goto fail;
   }

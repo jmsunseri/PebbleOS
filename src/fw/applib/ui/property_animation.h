@@ -16,7 +16,7 @@
 //!   @addtogroup Animation
 //!   @{
 //!     @addtogroup PropertyAnimation
-//! \brief A ProperyAnimation animates the value of a "property" of a "subject" over time.
+//! \brief A PropertyAnimation animates the value of a "property" of a "subject" over time.
 //!
 //! <h3>Animating a Layer's frame property</h3>
 //! Currently there is only one specific type of property animation offered off-the-shelf, namely
@@ -234,8 +234,8 @@ PropertyAnimation *property_animation_create_layer_bounds(struct Layer *layer, G
 //! layer_get_bounds() as accessors and uses the `layer` parameter as the subject for the animation.
 //! The same defaults are used as with \ref animation_create().
 //! @param layer the layer that will be animated
-//! @param from_origin the origin that the bounds should animate from
-//! @param to_origin the origin that the layer should animate to
+//! @param from the origin that the bounds should animate from
+//! @param to the origin that the layer should animate to
 //! @return A handle to the property animation. `NULL` if animation could not be created
 PropertyAnimation *property_animation_create_bounds_origin(struct Layer *layer, GPoint *from,
     GPoint *to);

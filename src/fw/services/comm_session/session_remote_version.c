@@ -6,17 +6,14 @@
 #include "comm/bt_lock.h"
 
 #include "kernel/events.h"
-#include "kernel/pbl_malloc.h"
 
-#include "pbl/services/bluetooth/bluetooth_persistent_storage.h"
 #include "pbl/services/comm_session/session_internal.h"
 #include "pbl/services/comm_session/session_remote_os.h"
 #include "kernel/event_loop.h"
 
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 #include "util/net.h"
-#include "system/logging.h"
-#include "system/hexdump.h"
+#include <pbl/logging/logging.h>
 
 PBL_LOG_MODULE_DECLARE(service_comm_session, CONFIG_SERVICE_COMM_SESSION_LOG_LEVEL);
 

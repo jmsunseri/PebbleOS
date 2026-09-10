@@ -5,8 +5,6 @@
 
 #include "pbl/services/battery/battery_monitor.h"
 
-#include <inttypes.h>
-
 //! Represents an angle relative to get to a reference direction, e.g. (magnetic) north.
 //! The angle value is scaled linearly, such that a value of TRIG_MAX_ANGLE
 //! corresponds to 360 degrees or 2 PI radians.
@@ -76,5 +74,5 @@ extern void ecomp_corr_reset(void);
 bool sys_ecompass_service_subscribed(void);
 
 //! Populate the provided data struct with compass data from the service.
-//! @param data[out] The struct to populate
+//! @param[out] data The struct to populate
 void sys_ecompass_get_last_heading(CompassHeadingData *data);

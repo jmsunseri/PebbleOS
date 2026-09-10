@@ -5,11 +5,9 @@
 #include "pbl/services/comm_session/protocol.h"
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/system_task.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
-
-#include <string.h>
+#include "pbl/util/attributes.h"
 
 PBL_LOG_MODULE_DEFINE(service_poll_remote, CONFIG_SERVICE_POLL_REMOTE_LOG_LEVEL);
 

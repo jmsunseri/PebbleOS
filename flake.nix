@@ -8,19 +8,19 @@
   outputs =
     { self, nixpkgs }:
     let
-      sdkVersion = "0.1.6";
+      sdkVersion = "0.1.8";
       sdkBundles = {
         aarch64-darwin = {
           osArch = "darwin-aarch64";
-          sha256 = "d389ecf084c168f6b18edfec972be8790521e81750d6fbfc352275206839bec2";
+          sha256 = "55d99b207273d6fa14fa808cb64f413b1737b436c934e759e6b016af47db830e";
         };
         aarch64-linux = {
           osArch = "linux-aarch64";
-          sha256 = "3c5f87380d7498ccaaa4ade45c105e97fa39aa71dec6b615d924e490978acb60";
+          sha256 = "df9a9d378f9fd99ba055caffc9fb03ff586a73f763b486626173a3e65c0188c1";
         };
         x86_64-linux = {
           osArch = "linux-x86_64";
-          sha256 = "a93d33f479154f96351590709af57ef79465ebee07c06f5e264a086eb1ca55b6";
+          sha256 = "346242b689ff0339e1d117da60fe2ff1ffdced5a5c8946d1d14474a97d164a80";
         };
       };
       forSupportedSystems = nixpkgs.lib.genAttrs (builtins.attrNames sdkBundles);
@@ -86,12 +86,13 @@
         in
         {
           default = pkgs.mkShellNoCC {
-            hardeningDisable = [ "fortify" ]; # waf expects unoptimized builds
+            hardeningDisable = [ "fortify" ]; # the firmware is built unoptimized
             nativeBuildInputs = with pkgs; [
               pkg-config
             ];
             buildInputs = with pkgs; [
               pebbleos-sdk
+              cmake
               gettext
               git
               librsvg
@@ -99,6 +100,8 @@
               openocd
               protobuf
               python313
+              meson
+              ninja
             ] ++ lib.optionals stdenv.isLinux [
               # multilib clang (i686 sysroot for -m32 test builds) is x86-only
               (if stdenv.hostPlatform.isx86_64 then clang_multi else clang)
@@ -136,13 +139,21 @@
               if [ ! -d "$VENV_DIR" ]; then
                 echo "Creating virtual environment..."
                 python -m venv "$VENV_DIR"
-                source "$VENV_DIR/bin/activate"
-                if [ -f "requirements.txt" ]; then
+              fi
+              source "$VENV_DIR/bin/activate"
+
+              # Refresh existing environments when project dependencies change.
+              if [ -f "requirements.txt" ]; then
+                requirements_hash=$(${pkgs.coreutils}/bin/sha256sum requirements.txt)
+                requirements_stamp="$VENV_DIR/.requirements.sha256"
+                if [ "$requirements_hash" != "$(cat "$requirements_stamp" 2>/dev/null)" ]; then
                   echo "Installing Python dependencies..."
-                  pip install -r requirements.txt
+                  if python -m pip install -r requirements.txt; then
+                    printf '%s\n' "$requirements_hash" > "$requirements_stamp"
+                  else
+                    return 1
+                  fi
                 fi
-              else
-                source "$VENV_DIR/bin/activate"
               fi
               
               echo "Python virtual environment activated."

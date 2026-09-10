@@ -3,15 +3,15 @@
 
 #pragma once
 
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 #include "pbl/services/regular_timer.h"
 #include "pbl/services/settings/settings_file.h"
-#include "os/mutex.h"
+#include "pbl/kernel/mutex.h"
 #include "pbl/services/timeline/item.h"
 
 typedef struct {
   SettingsFile file;
-  PebbleMutex *mutex;
+  struct pbl_mutex mutex;
   char *name;
   size_t max_size;
   uint32_t max_item_age; // seconds

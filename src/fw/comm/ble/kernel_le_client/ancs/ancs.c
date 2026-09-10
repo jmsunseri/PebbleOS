@@ -9,24 +9,21 @@
 
 #include "comm/ble/gatt_client_subscriptions.h"
 #include "comm/ble/gatt_client_operations.h"
-#include "comm/ble/kernel_le_client/dis/dis.h"
 
 #include "kernel/event_loop.h"
 #include "kernel/pbl_malloc.h"
 
-#include "pbl/services/analytics/analytics.h"
 #include "pbl/services/evented_timer.h"
 #include "pbl/services/notifications/ancs/ancs_notifications.h"
 #include "pbl/services/regular_timer.h"
-#include "pbl/services/timeline/timeline.h"
 
 #include "system/hexdump.h"
 #include "system/passert.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 #include "util/buffer.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #include <string.h>
 
@@ -545,8 +542,8 @@ T_STATIC void prv_check_ancs_alive(void) {
     // probe -- the next 15 min alive check will verify recovery.
     if (++s_ancs_client->alive_checks_without_ns >=
         ANCS_ALIVE_CHECKS_WITHOUT_NS_BEFORE_RESUBSCRIBE) {
-      PBL_LOG_INFO("ANCS NS silent for %u alive checks; forcing CCCD resubscribe",
-                   s_ancs_client->alive_checks_without_ns);
+      PBL_LOG_WRN("ANCS NS silent for %u alive checks; forcing CCCD resubscribe",
+                  s_ancs_client->alive_checks_without_ns);
       s_ancs_client->alive_checks_without_ns = 0;
       prv_resubscribe_to_ancs();
       // ancs_handle_subscribe() will re-arm on success; schedule a backup so
@@ -959,7 +956,7 @@ void ancs_handle_subscribe(BLECharacteristic subscribed_characteristic,
   }
 
   if (error == BLEGATTErrorSuccess) {
-    PBL_LOG_INFO("Hurray! ANCS subscribed: %u", characteristic_id);
+    PBL_LOG_INFO("ANCS subscribed: %u", characteristic_id);
 
     if (characteristic_id == ANCSCharacteristicData) {
       prv_ancs_is_alive_start_tracking();
@@ -1075,7 +1072,7 @@ static void prv_handle_ns_notification(uint32_t length, const uint8_t *notificat
     case EventIDNotificationAdded:
       // In iOS 8.2 several apps (especially mail.app) seem to be setting the pre-existing flag
       // when they shouldn't. This appeared to be fixed in iOS 9 beta 1.
-      // By skipping the pre-existing check we will re-recieve all the notifications
+      // By skipping the pre-existing check we will re-receive all the notifications
       // we got in the past 2 hours. To get past this ignore notifications for the first couple
       // seconds after connecting
       if (s_just_connected && (nsnotification->event_flags & EventFlagPreExisting)) {
@@ -1246,7 +1243,7 @@ void ancs_handle_ios9_or_newer_detected(void) {
 }
 
 // -------------------------------------------------------------------------------------------------
-// Lifecyle
+// Lifecycle
 
 void ancs_create(void) {
   PBL_ASSERTN(s_ancs_client == NULL);

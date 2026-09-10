@@ -3,18 +3,16 @@
 
 #include "pbl/services/blob_db/health_db.h"
 
-#include "console/prompt.h"
-#include "kernel/pbl_malloc.h"
-#include "os/mutex.h"
+#include "pbl/kernel/mutex.h"
 #include "pbl/services/activity/activity_private.h"
 #include "pbl/services/activity/hr_util.h"
 #include "pbl/services/blob_db/api.h"
 #include "pbl/services/filesystem/pfs.h"
 #include "pbl/services/settings/settings_file.h"
 #include "system/hexdump.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 #include "util/units.h"
 
 #include <stdio.h>
@@ -27,7 +25,7 @@ PBL_LOG_MODULE_DECLARE(service_blob_db, CONFIG_SERVICE_BLOB_DB_LOG_LEVEL);
 
 static const char *HEALTH_DB_FILE_NAME = "healthdb";
 static const int HEALTH_DB_MAX_SIZE = KiBYTES(12);
-static PebbleMutex *s_mutex;
+static PBL_MUTEX_DEFINE(s_mutex);
 
 #define MOVEMENT_DATA_KEY_SUFFIX "_movementData"
 #define SLEEP_DATA_KEY_SUFFIX "_sleepData"
@@ -91,13 +89,13 @@ _Static_assert(sizeof(HeartRateZoneData) % sizeof(uint32_t) == 0,
 
 
 static status_t prv_file_open_and_lock(SettingsFile *file) {
-  mutex_lock(s_mutex);
+  pbl_mutex_lock(&s_mutex, PBL_FOREVER);
 
   status_t rv = settings_file_open_growable(file, HEALTH_DB_FILE_NAME, HEALTH_DB_MAX_SIZE,
                                             KiBYTES(8));
   if (rv != S_SUCCESS) {
     PBL_LOG_ERR("Failed to open settings file");
-    mutex_unlock(s_mutex);
+    pbl_mutex_unlock(&s_mutex);
   }
 
   return rv;
@@ -105,7 +103,7 @@ static status_t prv_file_open_and_lock(SettingsFile *file) {
 
 static void prv_file_close_and_unlock(SettingsFile *file) {
   settings_file_close(file);
-  mutex_unlock(s_mutex);
+  pbl_mutex_unlock(&s_mutex);
 }
 
 static bool prv_key_is_valid(const uint8_t *key, int key_len) {
@@ -153,7 +151,7 @@ static void prv_notify_health_listeners(const char *key,
     if (!prv_is_last_processed_timestamp_valid(data->last_processed_timestamp)) {
       return;
     }
-    PBL_LOG_INFO("Got MovementData for wday: %d, cur_wday: %d, steps: %"PRIu32"",
+    PBL_LOG_DBG("Got MovementData for wday: %d, cur_wday: %d, steps: %"PRIu32"",
             wday, cur_wday, data->steps);
     activity_metrics_prv_set_metric(ActivityMetricStepCount, wday, data->steps);
     activity_metrics_prv_set_metric(ActivityMetricActiveSeconds, wday, data->active_seconds);
@@ -165,7 +163,7 @@ static void prv_notify_health_listeners(const char *key,
     if (!prv_is_last_processed_timestamp_valid(data->last_processed_timestamp)) {
       return;
     }
-    PBL_LOG_INFO("Got SleepData for wday: %d, cur_wday: %d, sleep: %"PRIu32"",
+    PBL_LOG_DBG("Got SleepData for wday: %d, cur_wday: %d, sleep: %"PRIu32"",
             wday, cur_wday, data->sleep_duration);
     activity_metrics_prv_set_metric(ActivityMetricSleepTotalSeconds, wday, data->sleep_duration);
     activity_metrics_prv_set_metric(ActivityMetricSleepRestfulSeconds, wday,
@@ -181,7 +179,7 @@ static void prv_notify_health_listeners(const char *key,
     if (data->num_zones != HRZone_Max) {
       return;
     }
-    PBL_LOG_INFO("Got HeartRateZoneData for wday: %d, cur_wday: %d, zone1: %"PRIu32"",
+    PBL_LOG_DBG("Got HeartRateZoneData for wday: %d, cur_wday: %d, zone1: %"PRIu32"",
             wday, cur_wday, data->minutes_in_zone[0]);
     activity_metrics_prv_set_metric(ActivityMetricHeartRateZone1Minutes, wday,
                                     data->minutes_in_zone[0]);
@@ -322,8 +320,6 @@ bool health_db_set_typical_values(ActivityMetric metric,
 /////////////////////////
 
 void health_db_init(void) {
-  s_mutex = mutex_create();
-  PBL_ASSERTN(s_mutex != NULL);
 }
 
 status_t health_db_insert(const uint8_t *key, int key_len, const uint8_t *val, int val_len) {
@@ -419,9 +415,9 @@ status_t health_db_delete(const uint8_t *key, int key_len) {
 }
 
 status_t health_db_flush(void) {
-  mutex_lock(s_mutex);
+  pbl_mutex_lock(&s_mutex, PBL_FOREVER);
   status_t rv = pfs_remove(HEALTH_DB_FILE_NAME);
-  mutex_unlock(s_mutex);
+  pbl_mutex_unlock(&s_mutex);
   return rv;
 }
 

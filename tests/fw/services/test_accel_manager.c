@@ -17,16 +17,16 @@
 #include "stubs_passert.h"
 #include "stubs_persist.h"
 #include "stubs_prompt.h"
-#include "stubs_queue.h"
+#include "stubs_msgq.h"
 #include "stubs_resources.h"
 #include "stubs_serial.h"
 #include "stubs_syscall_internal.h"
 #include "stubs_worker_manager.h"
 
-#include "drivers/accel.h"
+#include <pbl/drivers/accel.h>
 #include "pbl/services/event_service.h"
-#include "util/math.h"
-#include "util/size.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
 
 #include <stdio.h>
 
@@ -44,12 +44,18 @@ void sys_vibe_history_stop_collecting(void) {}
 int32_t sys_vibe_get_vibe_strength(void) {
   return 0;
 }
+int32_t vibes_get_vibe_strength(void) {
+  return 0;
+}
+uint32_t vibes_get_time_since_last_vibe_ms(void) {
+  return UINT32_MAX;
+}
 void accel_set_shake_sensitivity_high(bool sensitivity_high) {}
 void accel_set_shake_sensitivity_percent(uint8_t percent) {}
 bool shell_prefs_get_accel_shake_log_info_enabled(void) {
   return false;
 }
-QueueHandle_t pebble_task_get_to_queue(PebbleTask task) {
+struct pbl_msgq *pebble_task_get_to_queue(PebbleTask task) {
   return NULL;
 }
 

@@ -4,7 +4,6 @@
 #pragma once
 
 #include "gdraw_command_list.h"
-#include "applib/graphics/graphics.h"
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -61,11 +60,11 @@ bool gdraw_command_image_validate(GDrawCommandImage *image, size_t size);
 //! @param offset Offset from draw context origin to draw the image
 void gdraw_command_image_draw(GContext *ctx, GDrawCommandImage *image, GPoint offset);
 
-//! Draw an image after being processed by the passed in proccessor
+//! Draw an image after being processed by the passed in processor
 //! @param ctx The destination graphics context in which to draw
 //! @param image Image to draw
 //! @param offset Offset from draw context origin to draw the image
-//! @param processors Contains function pointers to draw modified commands in the image
+//! @param processor Contains function pointers to draw modified commands in the image
 void gdraw_command_image_draw_processed(GContext *ctx, GDrawCommandImage *image, GPoint offset,
                                         GDrawCommandProcessor *processor);
 

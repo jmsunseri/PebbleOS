@@ -4,7 +4,7 @@
 #pragma once
 
 #include "shell/prefs.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 
 static bool s_clock_24h;
 
@@ -16,14 +16,14 @@ void WEAK shell_prefs_set_clock_24h_style(bool is_24h) {
   s_clock_24h= is_24h;
 }
 
-static bool s_clock_timeezone_manual;
+static bool s_clock_timezone_manual;
 
 bool WEAK shell_prefs_is_timezone_source_manual(void) {
-  return s_clock_timeezone_manual;
+  return s_clock_timezone_manual;
 }
 
 void WEAK shell_prefs_set_timezone_source_manual(bool manual) {
-  s_clock_timeezone_manual = manual;
+  s_clock_timezone_manual = manual;
 }
 
 static bool s_clock_time_source_manual;
@@ -82,4 +82,24 @@ MenuScrollVibeBehavior WEAK shell_prefs_get_menu_scroll_vibe_behavior(void) {
 
 void WEAK shell_prefs_set_menu_scroll_vibe_behavior(MenuScrollVibeBehavior behavior) {
   s_menu_scroll_vibe_behavior = behavior;
+}
+
+static bool s_charging_blink_when_full = true;
+
+bool WEAK charging_blink_when_full_enabled(void) {
+  return s_charging_blink_when_full;
+}
+
+void WEAK charging_set_blink_when_full_enabled(bool enable) {
+  s_charging_blink_when_full = enable;
+}
+
+static bool s_charging_vibe_when_full = true;
+
+bool WEAK charging_vibe_when_full_enabled(void) {
+  return s_charging_vibe_when_full;
+}
+
+void WEAK charging_set_vibe_when_full_enabled(bool enable) {
+  s_charging_vibe_when_full = enable;
 }

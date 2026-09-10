@@ -2,7 +2,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "app_manager.h"
-#include "worker_manager.h"
 #include "process_loader.h"
 
 // Pebble stuff
@@ -11,8 +10,6 @@
 #include "applib/fonts/fonts.h"
 #include "applib/ui/dialogs/dialog.h"
 #include "applib/ui/dialogs/simple_dialog.h"
-#include "applib/ui/window_stack.h"
-#include "apps/system_app_ids.h"
 #include "console/prompt.h"
 #include "kernel/event_loop.h"
 #include "kernel/pbl_malloc.h"
@@ -20,15 +17,12 @@
 #include "kernel/ui/modals/modal_manager.h"
 #include "kernel/util/segment.h"
 #include "kernel/util/task_init.h"
-#include "mcu/cache.h"
-#include "mcu/privilege.h"
-#include "os/mutex.h"
+#include "pbl/mcu/privilege.h"
 #include "popups/health_tracking_ui.h"
 #include "popups/timeline/peek.h"
 #include "process_management/app_run_state.h"
 #include "process_management/pebble_process_md.h"
 #include "process_management/process_heap.h"
-#include "process_management/sdk_memory_limits.auto.h"
 #include "process_state/app_state/app_state.h"
 #include "resource/resource.h"
 #include "resource/resource_ids.auto.h"
@@ -36,13 +30,9 @@
 #include "pbl/services/compositor/compositor_transitions.h"
 #include "pbl/services/i18n/i18n.h"
 #include "pbl/services/light.h"
-#include "pbl/services/app_cache.h"
-#include "pbl/services/new_timer/new_timer.h"
-#ifndef CONFIG_RECOVERY_FW
-#include "pbl/services/powermode_service.h"
-#endif
 #include "pbl/services/app_inbox_service.h"
 #include "pbl/services/app_outbox_service.h"
+#include "pbl/services/vibe_pattern.h"
 #ifndef CONFIG_RECOVERY_FW
 #include "pbl/services/speaker/speaker_service.h"
 #endif
@@ -52,19 +42,15 @@
 #include "shell/system_app_state_machine.h"
 #include "syscall/syscall.h"
 #include "syscall/syscall_internal.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/size.h"
+#include "pbl/util/math.h"
 
 // FreeRTOS stuff
-#include "FreeRTOS.h"
-#include "task.h"
-#include "queue.h"
 
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #define RETURN_CRASH_TIMEOUT_TICKS  (60 * RTC_TICKS_HZ)
@@ -83,8 +69,9 @@ extern char __stack_guard_size__[];
 //! Used by the "pebble gdb" command to locate the loaded app in memory.
 void * volatile g_app_load_address;
 
-static const int MAX_TO_APP_EVENTS = 32;
-static QueueHandle_t s_to_app_event_queue;
+#define MAX_TO_APP_EVENTS 32
+static PBL_MSGQ_DEFINE(s_to_app_event_queue, sizeof(PebbleEvent), MAX_TO_APP_EVENTS);
+static bool s_initialized;
 static ProcessContext s_app_task_context;
 static ProcessAppRunLevel s_minimum_run_level;
 
@@ -100,30 +87,16 @@ typedef struct {
 } AppCrashInfo;
 
 static NextApp s_next_app;
-#ifndef CONFIG_RECOVERY_FW
-static bool s_powermode_hp_requested;
-static TimerID s_powermode_release_timer;
-
-#define POWERMODE_WATCHFACE_RELEASE_DELAY_MS 5000
-#endif
 
 // ---------------------------------------------------------------------------------------------
 void app_manager_init(void) {
-  s_to_app_event_queue = xQueueCreate(MAX_TO_APP_EVENTS, sizeof(PebbleEvent));
-
+  s_initialized = true;
   s_app_task_context = (ProcessContext) { 0 };
-
-#ifndef CONFIG_RECOVERY_FW
-  // Start in high-performance mode; released when a watchface is loaded
-  powermode_service_request_hp();
-  s_powermode_hp_requested = true;
-  s_powermode_release_timer = new_timer_create();
-#endif
 }
 
 // ---------------------------------------------------------------------------------------------
 bool app_manager_is_initialized(void) {
-  return s_to_app_event_queue != NULL;
+  return s_initialized;
 }
 
 static bool s_first_app_launched = false;
@@ -209,18 +182,20 @@ void prv_dump_start_app_info(const PebbleProcessMd *app_md) {
 static size_t prv_get_app_segment_size(const PebbleProcessMd *app_md) {
   switch (process_metadata_get_app_sdk_type(app_md)) {
     case ProcessAppSDKType_Legacy2x:
-      return APP_RAM_2X_SIZE;
+      return CONFIG_APP_RAM_2X_SEGMENT_SIZE;
     case ProcessAppSDKType_Legacy3x:
-      return APP_RAM_3X_SIZE;
+      return CONFIG_APP_RAM_3X_SEGMENT_SIZE;
     case ProcessAppSDKType_4x:
 #ifdef CONFIG_MODDABLE_XS
       if (app_md->is_moddable_app) {
-        return APP_RAM_4X_SIZE - (APP_STACK_JS_SIZE - APP_STACK_NORMAL_SIZE);
+        return CONFIG_APP_RAM_4X_SEGMENT_SIZE - (APP_STACK_JS_SIZE - APP_STACK_NORMAL_SIZE);
       }
 #endif
-      return APP_RAM_4X_SIZE;
+      return CONFIG_APP_RAM_4X_SEGMENT_SIZE;
     case ProcessAppSDKType_System:
-      return APP_RAM_SYSTEM_SIZE;
+      // System apps get the largest of the supported environments.
+      return MAX(CONFIG_APP_RAM_2X_SEGMENT_SIZE,
+                 MAX(CONFIG_APP_RAM_3X_SEGMENT_SIZE, CONFIG_APP_RAM_4X_SEGMENT_SIZE));
     default:
       WTF;
   }
@@ -232,8 +207,8 @@ static size_t prv_get_app_stack_size(const PebbleProcessMd *app_md) {
     return APP_STACK_JS_SIZE;
   }
 #endif
-  // Only 4x/System apps get the larger stack: their segment (APP_RAM_SIZES) is
-  // sized for it. Legacy 2x/3x apps keep the historical 2 KiB stack to match
+  // Only 4x/System apps get the larger stack: their segment (CONFIG_APP_RAM_*)
+  // is sized for it. Legacy 2x/3x apps keep the historical 2 KiB stack to match
   // their (unchanged) segment sizes.
   switch (process_metadata_get_app_sdk_type(app_md)) {
     case ProcessAppSDKType_Legacy2x:
@@ -251,17 +226,6 @@ T_STATIC MemorySegment prv_get_app_ram_segment(void) {
 T_STATIC size_t prv_get_stack_guard_size(void) {
   return (uintptr_t)__stack_guard_size__;
 }
-
-#ifndef CONFIG_RECOVERY_FW
-// ---------------------------------------------------------------------------------------------
-static void prv_powermode_release_cb(void *data) {
-  (void)data;
-  if (s_powermode_hp_requested) {
-    powermode_service_release_hp();
-    s_powermode_hp_requested = false;
-  }
-}
-#endif
 
 // ---------------------------------------------------------------------------------------------
 //! @return True on success, False if:
@@ -302,7 +266,7 @@ static bool prv_app_start(const PebbleProcessMd *app_md, const void *args,
   // to clobber actual data. And syscalls assume that the stack is always at the
   // top of APP_RAM; violating this assumption will result in syscalls sometimes
   // failing when the app hasn't done anything wrong.
-  portSTACK_TYPE *stack = memory_segment_split(&app_segment, NULL, stack_size);
+  void *stack = memory_segment_split(&app_segment, NULL, stack_size);
   PBL_ASSERTN(stack);
   s_app_task_context.load_start = app_segment.start;
   g_app_load_address = app_segment.start;
@@ -369,21 +333,22 @@ static bool prv_app_start(const PebbleProcessMd *app_md, const void *args,
   app_manager_set_minimum_run_level(process_metadata_get_run_level(app_md));
 
   // Use the static app event queue:
-  s_app_task_context.to_process_event_queue = s_to_app_event_queue;
+  s_app_task_context.to_process_event_queue = &s_to_app_event_queue;
 
   // Init services required for this process before it starts to execute
   process_manager_process_setup(PebbleTask_App);
 
-  char task_name[configMAX_TASK_NAME_LEN];
+  char task_name[PBL_THREAD_NAME_LEN];
   snprintf(task_name, sizeof(task_name), "App <%s>", process_metadata_get_name(s_app_task_context.app_md));
 
-  TaskParameters_t task_params = {
-    .pvTaskCode = prv_app_task_main,
-    .pcName = task_name,
-    .usStackDepth = stack_size / sizeof(portSTACK_TYPE),
-    .pvParameters = entry_point,
-    .uxPriority = APP_TASK_PRIORITY | portPRIVILEGE_BIT,
-    .puxStackBuffer = stack,
+  struct pbl_thread_attr attr = {
+    .name = task_name,
+    .entry = prv_app_task_main,
+    .arg = entry_point,
+    .prio = APP_TASK_PRIORITY,
+    .privileged = true,
+    .stack = stack,
+    .stack_size = stack_size,
   };
 
   PBL_LOG_DBG("Starting %s", task_name);
@@ -393,7 +358,7 @@ static bool prv_app_start(const PebbleProcessMd *app_md, const void *args,
       (app_md->process_storage == ProcessStorageFlash) ?
           process_metadata_get_code_bank_num(app_md) : SYSTEM_APP_BANK_ID);
 
-  pebble_task_create(PebbleTask_App, &task_params, &s_app_task_context.task_handle);
+  s_app_task_context.task_handle = pebble_task_create(PebbleTask_App, &attr);
 
   // Always notify the phone that the application is running
   app_run_state_send_update(&app_md->uuid, RUNNING);
@@ -413,21 +378,6 @@ static bool prv_app_start(const PebbleProcessMd *app_md, const void *args,
 
 #if !defined(CONFIG_RECOVERY_FW)
   health_tracking_ui_register_app_launch(s_app_task_context.install_id);
-#endif
-
-#ifndef CONFIG_RECOVERY_FW
-  if (app_md->process_type == ProcessTypeWatchface) {
-    if (s_powermode_hp_requested) {
-      new_timer_start(s_powermode_release_timer, POWERMODE_WATCHFACE_RELEASE_DELAY_MS,
-                      prv_powermode_release_cb, NULL, 0);
-    }
-  } else {
-    new_timer_stop(s_powermode_release_timer);
-    if (!s_powermode_hp_requested) {
-      powermode_service_request_hp();
-      s_powermode_hp_requested = true;
-    }
-  }
 #endif
 
   return true;
@@ -458,7 +408,8 @@ static void prv_app_cleanup(void) {
   light_reset_user_controlled();
   light_set_system_color();
   sys_vibe_history_stop_collecting();
-  sys_vibe_pattern_clear();
+  // Clear only app-started vibes, so an app exit doesn't kill an alarm.
+  vibe_pattern_clear_for_owner(VibePatternOwner_App);
 #ifndef CONFIG_RECOVERY_FW
   speaker_service_stop_for_task(PebbleTask_App);
 #endif
@@ -563,7 +514,7 @@ static void prv_app_show_crash_ui(AppInstallId install_id) {
 //! Switch to the app stored in the s_next_app global. The gracefully flag tells us whether to attempt a graceful
 //! exit or not.
 //!
-//! For a graceful exit, if the app has not alreeady finished it's de-init, we post a de_init event to the app, set
+//! For a graceful exit, if the app has not already finished it's de-init, we post a de_init event to the app, set
 //! a 3 second timer, and return immediately to the caller. If/when the app finally finishes deinit, it will post a
 //! PEBBLE_PROCESS_KILL_EVENT (graceful=true), which results in this method being again with graceful=true. We will then
 //! see that the de_init already finished in that second invocation.
@@ -641,7 +592,6 @@ static bool prv_app_switch(bool gracefully) {
   return true;
 }
 
-
 // ---------------------------------------------------------------------------------------------
 void app_manager_start_first_app(void) {
   const PebbleProcessMd* app_md = system_app_state_machine_system_start();
@@ -673,7 +623,7 @@ void app_manager_start_first_app(void) {
 static const CompositorTransition *prv_get_transition(const LaunchConfigCommon *config,
                                                       AppInstallId new_app_id) {
   return config->transition ?: shell_get_open_compositor_animation(s_app_task_context.install_id,
-                                                                   new_app_id);
+                                                                   new_app_id, config);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -901,7 +851,6 @@ bool app_manager_is_app_supported(const PebbleProcessMd *md) {
   return prv_get_app_segment_size(md) > 0;
 }
 
-
 // Commands
 ///////////////////////////////////////////////////////////
 
@@ -921,7 +870,6 @@ void command_get_active_app_metadata(void) {
     prompt_send_response("metadata lookup failed: no app running");
   }
 }
-
 
 // -------------------------------------------------------------------------------------------
 /*!

@@ -3,15 +3,11 @@
 
 #pragma once
 
-#include <inttypes.h>
-
 #include <bluetooth/bluetooth_types.h>
 #include <bluetooth/gatt_discovery.h>
 #include <bluetooth/hci_types.h>
 
 #include "comm/ble/gap_le_connection.h"
-#include "comm/ble/gatt_client_accessors.h"
-#include "util/attributes.h"
 
 // -- Gatt Device/Server Events
 
@@ -83,15 +79,15 @@ typedef struct GattClientOpResponseHdr {
   void *context;
 } GattClientOpResponseHdr;
 
-typedef struct GattClientOpReadReponse {
+typedef struct GattClientOpReadResponse {
   GattClientOpResponseHdr hdr;
   uint16_t value_length;
   uint8_t *value;
-} GattClientOpReadReponse;
+} GattClientOpReadResponse;
 
-typedef struct GattClientOpWriteReponse {
+typedef struct GattClientOpWriteResponse {
   GattClientOpResponseHdr hdr;
-} GattClientOpWriteReponse;
+} GattClientOpWriteResponse;
 
 // -- Gatt Data Structures
 
@@ -132,7 +128,7 @@ extern void bt_driver_cb_gatt_handle_mtu_update(const GattDeviceMtuUpdateEvent *
 
 extern void bt_driver_cb_gatt_handle_notification(const GattServerNotifIndicEvent *event);
 
-//! @NOTE: The indication is unconditionally confirmed within the bt_driver as soon as one is
+//! @note The indication is unconditionally confirmed within the bt_driver as soon as one is
 //!        received.
 extern void bt_driver_cb_gatt_handle_indication(const GattServerNotifIndicEvent *event);
 

@@ -4,16 +4,16 @@
 #pragma once
 
 #include "applib/data_logging.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "flash_region/flash_region.h"
 #include "kernel/pebble_tasks.h"
-#include "os/mutex.h"
+#include "pbl/kernel/mutex.h"
 #include "pbl/services/comm_session/protocol.h"
 #include "system/hexdump.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 #include "util/shared_circular_buffer.h"
 #include "util/units.h"
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -130,7 +130,7 @@ typedef struct {
 
 //! Information needed while a session is active (watch app still adding more data).
 typedef struct {
-  PebbleMutex *mutex;
+  struct pbl_mutex mutex;
   SharedCircularBuffer buffer;    //! A data buffer
   SharedCircularBufferClient buffer_client;
   uint8_t *buffer_storage;        //! Storage for the buffer

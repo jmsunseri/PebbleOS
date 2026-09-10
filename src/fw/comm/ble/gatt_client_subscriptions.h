@@ -4,7 +4,7 @@
 #pragma once
 
 #include "applib/bluetooth/ble_client.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 
 #include "gap_le_task.h"
 
@@ -18,7 +18,7 @@ struct GAPLEConnection;
    CONFIG_BLE_GATT_SUBSCRIPTION_DEPTH)
 
 //! Data structure representing a subscription of a specific client for
-//! noticications or indications of a GATT characteristic for a specific
+//! notifications or indications of a GATT characteristic for a specific
 //! client (GAPLEClientApp or GAPLEClientKernel). The GAPLEConnection struct has
 //! the head for each BLE connection.
 typedef struct {
@@ -49,6 +49,7 @@ BTErrno gatt_client_subscriptions_subscribe(BLECharacteristic characteristic,
                                             GAPLEClient client);
 
 //! Gets the length of the next notification in the buffer that was received.
+//! @param client The client for which to get the next notification header.
 //! @param[out] header_out The header of the notification, containing the value length and the
 //! characteristic reference.
 //! @return True if there is a notification in the buffer, false if not
@@ -60,10 +61,13 @@ bool gatt_client_subscriptions_get_notification_header(GAPLEClient client,
 //! until 0 is returned.
 //! @see gatt_client_subscriptions_get_notification_value_length() to get the length of the next
 //! notification.
+//! @param[out] characteristic_ref_out The characteristic for which the notification was sent.
+//! @param[out] value_out Buffer into which the notification's value is copied.
 //! @param[in,out] value_length_in_out Cannot be NULL. In: the size of the value_out buffer.
 //! Out: the number of bytes copied into the value_out buffer.
+//! @param client The client for which to consume the next notification.
 //! @param[out] has_more_out Cannot be NULL. Will be set to true if there are more notifications
-//! in the buffer, or to false if there are no more notifiations in the buffer.
+//! in the buffer, or to false if there are no more notifications in the buffer.
 //! @return The length of the next notification's payload, if there is any (has_more_out is true),
 //! undefined otherwise.
 uint16_t gatt_client_subscriptions_consume_notification(BLECharacteristic *characteristic_ref_out,
@@ -83,6 +87,7 @@ void gatt_client_subscriptions_cleanup_by_client(GAPLEClient client);
 
 //! Frees the GATTClientSubscriptionNode nodes that might have been associated
 //! with the connection as result of gatt_client_subscriptions_subscribe calls.
+//! @param connection The connection for which to free the subscription nodes.
 //! @param should_unsubscribe If true, the current subscriptions will be unsubscribed before
 //! cleanup. If false, the current subscriptions will not be unsubscribed (this is useful when
 //! the connection is already severed.) No unsubscription events will be emitted regardless of the

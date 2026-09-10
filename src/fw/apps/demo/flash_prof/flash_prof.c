@@ -3,17 +3,15 @@
 
 #include "process_management/pebble_process_md.h"
 #include "applib/app.h"
-#include "system/logging.h"
-#include "drivers/flash.h"
-#include "drivers/rtc.h"
+#include <pbl/logging/logging.h>
+#include <pbl/drivers/flash.h>
+#include <pbl/drivers/rtc.h>
 #include "flash_region/flash_region.h"
 #include "system/passert.h"
 #include "kernel/pbl_malloc.h"
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/number_window.h"
 #include "applib/ui/window_stack.h"
-
-#include "FreeRTOS.h"
 
 static NumberWindow number_window;
 

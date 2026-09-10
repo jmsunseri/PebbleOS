@@ -10,6 +10,8 @@ if RNG
 
 config RNG_SF32LB
     bool "SiFli SF32LB"
+    default y if SOC_SF32LB52
+    select HAL_SIFLI
     select HAL_SIFLI_RNG
     help
       Support for the SiFli SF32LB RNG.
@@ -21,6 +23,6 @@ config RNG_STUB
 
 module = DRIVER_RNG
 module-str = Random Number Generator
-source "src/fw/Kconfig.template.log_level"
+source "subsys/logging/Kconfig.template.log_level"
 
 endif # RNG

@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "util/list.h"
-#include "util/attributes.h"
+#include "pbl/util/list.h"
+#include "pbl/util/attributes.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -44,6 +44,23 @@ void shared_circular_buffer_init(SharedCircularBuffer* buffer, uint8_t* storage,
 bool shared_circular_buffer_write(SharedCircularBuffer* buffer, const uint8_t* data, uint16_t length,
         bool advance_slackers);
 
+//! Reserve a contiguous run of write space without copying any data in. Fill the returned
+//! segment(s) directly, then call shared_circular_buffer_write_commit() with the same length.
+//! The reservation may wrap the end of the storage, in which case it is split into two segments.
+//! @param buffer The buffer to reserve space in
+//! @param length Number of bytes to reserve
+//! @param advance_slackers See shared_circular_buffer_write()
+//! @param[out] seg1 Pointer to the first segment
+//! @param[out] seg1_length Length of the first segment (equals length when there's no wrap)
+//! @param[out] seg2 Pointer to the second segment, only valid when *seg1_length < length
+//! @return false if there's insufficient space.
+bool shared_circular_buffer_write_reserve(SharedCircularBuffer* buffer, uint16_t length,
+        bool advance_slackers, uint8_t** seg1, uint16_t* seg1_length, uint8_t** seg2);
+
+//! Commit a reservation previously made with shared_circular_buffer_write_reserve(), advancing
+//! the write index by length. The length must match the reserved length.
+void shared_circular_buffer_write_commit(SharedCircularBuffer* buffer, uint16_t length);
+
 //! Add a read client
 //! @param buffer The buffer to add the client to
 //! @param client Pointer to a client structure. This structure must be allocated by the caller and can not
@@ -61,10 +78,10 @@ void shared_circular_buffer_remove_client(SharedCircularBuffer* buffer, SharedCi
 //!
 //! If the circular buffer wraps in the middle of the requested data, this function call will return true but will
 //! provide fewer bytes that requested. When this happens, the length_out parameter will be set to a value smaller
-//! than length. A second read call can be made with the remaining smaller length to retreive the rest.
+//! than length. A second read call can be made with the remaining smaller length to retrieve the rest.
 //!
 //! The reason this read doesn't consume is to avoid having to copy out the data. The data_out pointer should be
-//! stable until you explicitely ask for it to be consumed with circular_buffer_consume.
+//! stable until you explicitly ask for it to be consumed with circular_buffer_consume.
 //!
 //! @param buffer The buffer to read from
 //! @param client pointer to the client struct originally passed to circular_buffer_add_client

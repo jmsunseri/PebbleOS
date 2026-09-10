@@ -6,11 +6,11 @@
 
 #pragma once
 
-#include "drivers/display/display.h" // FIXME: Need display dimensions
+#include <pbl/drivers/display/display.h> // FIXME: Need display dimensions
 #include "resource/resource.h"
-#include "util/attributes.h"
-#include "util/math.h"
-#include "util/math_fixed.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/math.h"
+#include "pbl/util/math_fixed.h"
 
 #if !(defined(SDK) || defined(UNITTEST))
 #endif
@@ -322,6 +322,10 @@ static inline uint32_t gpoint_distance_squared(GPoint a, GPoint b) {
 bool gpoint_equal(const GPoint * const point_a, const GPoint * const point_b);
 
 //! Sorts an array of gpoints using a given GPointComparator
+//! @param points Array of points to sort
+//! @param num_points Number of points in the array
+//! @param comparator GPointComparator to compare the points with
+//! @param context Callback context passed to the comparator
 //! @param reverse false to maintain order, true to reverse the order
 void gpoint_sort(GPoint *points, size_t num_points, GPointComparator comparator, void *context,
     bool reverse);
@@ -564,13 +568,11 @@ bool grect_is_empty(const GRect* const rect);
 //! the origin will offset, so that the final rectangle overlaps with the original.
 //! For example, a GRect with size (-10, -5) and origin (20, 20), will be standardized
 //! to size (10, 5) and origin (10, 15).
-//! @param[in] rect The rectangle to convert.
-//! @param[out] rect The standardized rectangle.
+//! @param[in,out] rect The rectangle to convert, set to the standardized rectangle.
 void grect_standardize(GRect *rect);
 
 //! Trim one rectangle using the edges of a second rectangle.
-//! @param[in] rect_to_clip The rectangle that needs to be clipped (in place).
-//! @param[out] rect_to_clip The clipped rectangle.
+//! @param[in,out] rect_to_clip The rectangle that needs to be clipped (in place).
 //! @param rect_clipper The rectangle of which the edges will serve as "scissors"
 //! in order to trim `rect_to_clip`.
 void grect_clip(GRect * const rect_to_clip, const GRect * const rect_clipper);
@@ -649,11 +651,11 @@ typedef struct {
 //!    (GEdgeInsets){.top = v1, .right = v2, .bottom = v3, .left = v2}
 //!  - four values v1, v2, v3, v4 to configure it with
 //!    (GEdgeInsets){.top = v1, .right = v2, .bottom = v3, .left = v4}
-//! @see \ref grect_insets
+//! @see \ref grect_inset
 #define GEdgeInsets(...) \
   GEdgeInsetsN(__VA_ARGS__, GEdgeInsets4, GEdgeInsets3, GEdgeInsets2, GEdgeInsets1)(__VA_ARGS__)
 
-//! Returns a rectangle that is shrinked or expanded by the given edge insets.
+//! Returns a rectangle that is shrunk or expanded by the given edge insets.
 //! @note The rectangle is standardized and then the inset parameters are applied.
 //! If the resulting rectangle would have a negative height or width, a GRectZero is returned.
 //! @param rect The rectangle that will be inset
@@ -733,7 +735,7 @@ typedef struct __attribute__ ((__packed__)) GBitmapLegacy2 {
   //! Pointer to the address where the image data lives
   void *addr;
   //! @note The number of bytes per row may have restrictions depending on the format:
-  //! - \ref GBitmapFormat1Bit: Must be a multiple of 4 (eg. word-padded)
+  //! - \ref GBitmapFormat1Bit "GBitmapFormat1Bit": Must be a multiple of 4 (eg. word-padded)
   //! - All palettized formats must have byte-aligned rows.
   //! Also, the following should (naturally) be true: `(row_size_bytes * 8 >= bounds.w)`
   uint16_t row_size_bytes;
@@ -801,7 +803,7 @@ typedef struct __attribute__ ((__packed__)) GBitmap {
   //! Pointer to the address where the image data lives
   void *addr;
   //! @note The number of bytes per row may have restrictions depending on the format:
-  //! - \ref GBitmapFormat1Bit: Must be a multiple of 4 (eg. word-padded)
+  //! - \ref GBitmapFormat1Bit "GBitmapFormat1Bit": Must be a multiple of 4 (eg. word-padded)
   //! - All palettized formats must have byte-aligned rows.
   //! Also, the following should (naturally) be true: `(row_size_bytes * 8 >= bounds.w)`
   //! 0, if bitmap has a variable row size (GBitmapFormat8BitCircular)
@@ -1045,7 +1047,7 @@ GBitmap *gbitmap_create_with_resource_system(ResAppNum app_num, uint32_t resourc
 //! @internal
 //! @see gbitmap_init_with_resource
 //! @param app_num The app's resource bank number
-//! @return true if we were sucessful, false otherwise
+//! @return true if we were successful, false otherwise
 bool gbitmap_init_with_resource_system(GBitmap* bitmap, ResAppNum app_num, uint32_t resource_id);
 
 //! @internal
@@ -1089,8 +1091,8 @@ typedef enum GAlign {
 //! Aligns one rectangle within another rectangle, using an alignment parameter.
 //! The relative coordinate systems of both rectangles are assumed to be the same.
 //! When clip is true, `rect` is also clipped by the constraint.
-//! @param[in] rect The rectangle to align (in place)
-//! @param[out] rect The aligned and optionally clipped rectangle
+//! @param[in,out] rect The rectangle to align (in place), set to the aligned and
+//! optionally clipped rectangle
 //! @param inside_rect The rectangle in which to align `rect`
 //! @param alignment Determines the alignment of `rect` within `inside_rect` by
 //! specifying what edges of should overlap.
@@ -1303,7 +1305,7 @@ typedef struct PACKED {
   //! Text drawing functions MUST use this as text color
   GColor text_color;
   //! This color MUST be used as the tint color when using the drawing functions
-  //! \ref graphics_draw_bitmap_in_rect and \ref graphics_draw_rotated_bitmap_in_rect
+  //! \ref graphics_draw_bitmap_in_rect and \ref graphics_draw_rotated_bitmap
   //! on Basalt with the compositing mode as GCompOpOr.
   GColor tint_color;
   //! Bitmap compositing functions MUST use this as the compositing mode
@@ -1326,7 +1328,7 @@ typedef struct PACKED {
 typedef Fixed_S32_16 GTransformNumber;
 
 //! @internal
-//! Data structure that contains the internal representation of a 3x3 tranformation matrix
+//! Data structure that contains the internal representation of a 3x3 transformation matrix
 //! The transformation matrix will be expressed as follows:
 //! [ a  b  0 ]
 //! [ c  d  0 ]

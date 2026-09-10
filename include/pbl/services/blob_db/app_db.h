@@ -5,13 +5,11 @@
 
 #include <stdint.h>
 
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 #include "process_management/app_install_manager.h"
 #include "process_management/pebble_process_info.h"
 #include "system/status_codes.h"
-#include "util/attributes.h"
-#include "util/list.h"
-
+#include "pbl/util/attributes.h"
 
 //! App database entry for BlobDB. First pass is very basic. The list will expand as more features
 //! and requirements are implemented.

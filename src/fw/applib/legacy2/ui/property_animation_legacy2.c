@@ -4,12 +4,10 @@
 #include "property_animation_legacy2.h"
 #include "applib/ui/property_animation.h"
 
-#include "applib/ui/animation_timing.h"
 #include "applib/ui/layer.h"
 
 #include "kernel/pbl_malloc.h"
-#include "system/passert.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
 /////////////////////
 // Property Animation

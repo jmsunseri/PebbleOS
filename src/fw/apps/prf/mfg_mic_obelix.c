@@ -10,14 +10,14 @@
 #include "applib/ui/window.h"
 #include "apps/prf/mfg_test_result.h"
 #include "kernel/pbl_malloc.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "board/board.h"
 #include "process_management/pebble_process_md.h"
 #include "process_state/app_state/app_state.h"
-#include "drivers/audio.h"
-#include "drivers/pmic/npm1300.h"
+#include <pbl/drivers/audio.h>
+#include <pbl/drivers/pmic/npm1300.h>
 #include "flash_region/flash_region.h"
-#include "drivers/flash.h"
+#include <pbl/drivers/flash.h>
 #include "applib/ui/window_private.h"
 
 #define PCM_BUFFER_SIZE          1024
@@ -130,7 +130,7 @@ static void prv_recording_start(void) {
 
   snprintf(app_data->status_text, PROCESS_STATUS_STR_LEN, "Pls Speak");
   mic_init(MIC);
-  //set to maximum make it's more audiable in testing
+  //set to maximum make it's more audible in testing
   mic_set_volume(MIC, 100);
   mic_start(MIC, prv_mic_data_handler, NULL, app_data->pcm, PCM_BUFFER_SIZE);
   app_data->mic_recording = true;

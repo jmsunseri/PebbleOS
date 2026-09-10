@@ -16,25 +16,22 @@
 #include "comm/bt_lock.h"
 #include "comm/ble/gap_le_connection.h"
 #include "comm/ble/gap_le_device_name.h"
-#include "drivers/rtc.h"
 #include "kernel/pbl_malloc.h"
 #include "kernel/ui/system_icons.h"
 #include "resource/resource_ids.auto.h"
-#include "pbl/services/analytics/analytics.h"
 #include "pbl/services/bluetooth/bluetooth_persistent_storage.h"
 #include "pbl/services/bluetooth/local_id.h"
 #include "pbl/services/bluetooth/pairability.h"
 #include "pbl/services/i18n/i18n.h"
-#include "pbl/services/system_task.h"
 #include "pbl/services/bluetooth/ble_hrm.h"
 #include "shell/system_theme.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/string.h"
+#include "pbl/util/string.h"
 
 #include <bluetooth/bluetooth_types.h>
 #include <bluetooth/sm_types.h>
-#include <btutil/bt_device.h>
+#include <pbl/btutil/bt_device.h>
 
 #include <stdio.h>
 #include <string.h>

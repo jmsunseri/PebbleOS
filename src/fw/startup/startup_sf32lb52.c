@@ -4,9 +4,8 @@
 #include <stdint.h>
 
 #include "system/passert.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 
-#include <cmsis_core.h>
 #include <bf0_hal.h>
 
 //! These symbols are defined in the linker script for use in initializing

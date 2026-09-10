@@ -4,12 +4,12 @@
 #include "pbl/services/bluetooth/local_addr.h"
 
 #include "comm/bt_lock.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include <bluetooth/bluetooth_types.h>
 #include <bluetooth/id.h>
-#include <btutil/bt_device.h>
+#include <pbl/btutil/bt_device.h>
 
 PBL_LOG_MODULE_DECLARE(service_bluetooth, CONFIG_SERVICE_BLUETOOTH_LOG_LEVEL);
 

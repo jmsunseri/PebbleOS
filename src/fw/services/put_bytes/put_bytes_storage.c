@@ -4,9 +4,9 @@
 #include "pbl/services/put_bytes/put_bytes_storage_internal.h"
 
 #include "kernel/pbl_malloc.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 PBL_LOG_MODULE_DECLARE(service_put_bytes, CONFIG_SERVICE_PUT_BYTES_LOG_LEVEL);
 

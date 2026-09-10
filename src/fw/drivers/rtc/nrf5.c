@@ -1,32 +1,25 @@
 /* SPDX-FileCopyrightText: 2025 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/rtc.h"
+#include "pbl/kernel/irq.h"
+#include "pbl/kernel/types.h"
+#include <pbl/drivers/rtc.h>
 
-#include "console/dbgserial.h"
+#include <pbl/drivers/exti.h>
+#include <pbl/drivers/task_watchdog.h>
 
-#include "drivers/exti.h"
-#include "drivers/watchdog.h"
-#include "drivers/task_watchdog.h"
-
-#include "mcu/interrupts.h"
+#include "pbl/mcu/interrupts.h"
 
 #include "pbl/services/regular_timer.h"
 
-#include "system/bootbits.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "system/reset.h"
 
 #include "util/time/time.h"
-
-#include "FreeRTOS.h"
 
 #include <hal/nrf_rtc.h>
 
 #include <inttypes.h>
-#include <stdio.h>
-#include <string.h>
 
 PBL_LOG_MODULE_DEFINE(driver_rtc_nrf5, CONFIG_DRIVER_RTC_LOG_LEVEL);
 
@@ -133,11 +126,6 @@ static time_t prv_ticks_to_time(RtcTicks ticks) {
 }
 
 void rtc_set_time(time_t time) {
-#ifdef CONFIG_LOG
-  char buffer[TIME_STRING_BUFFER_SIZE];
-  PBL_LOG_INFO("Setting time to %lu <%s>", time, time_t_to_string(buffer, time));
-#endif
-
   s_time_base = time;
   s_time_tick_base = rtc_get_ticks();
 
@@ -173,19 +161,12 @@ static void prv_restore_rtc_time_state(void) {
      * last time we saved.  */
     s_time_base = last_save_time;
     s_time_tick_base = 0;
-    PBL_LOG_INFO("Restore RTC: we are on our way up with amnesia");
   } else {
     RtcIntervalTicks current_ticks = prv_get_rtc_interval_ticks();
     const int32_t ticks_since_last_save = prv_elapsed_ticks(last_save_time_ticks * RTC_TICKS_HZ, current_ticks);
     s_time_base = last_save_time + (ticks_since_last_save / RTC_TICKS_HZ);
     s_time_tick_base = -(((int64_t)current_ticks) % RTC_TICKS_HZ);
-    PBL_LOG_INFO("Restore RTC: we are on our way up with interval_ticks = %"PRIu32, current_ticks);
-    PBL_LOG_INFO("Restore RTC: saved: %"PRIu32" diff: %"PRIu32, last_save_time_ticks, ticks_since_last_save);
   }
-
-  char buffer[TIME_STRING_BUFFER_SIZE];
-  PBL_LOG_INFO("Restore RTC: saved_time: %s raw: %lu", time_t_to_string(buffer, last_save_time), last_save_time);
-  PBL_LOG_INFO("Restore RTC: current time: %s", time_t_to_string(buffer, s_time_base));
 }
 
 static RtcIntervalTicks prv_get_last_save_time_ticks(void) {
@@ -254,9 +235,8 @@ const char *time_t_to_string(char *buffer, time_t t) {
   return buffer;
 }
 
-
 //! We attempt to save registers by placing both the timezone abbreviation
-//! timezone index and the daylight_savingtime into the same register set
+//! timezone index and the daylight_savings_time into the same register set
 void rtc_set_timezone(TimezoneInfo *tzinfo) {
   uint32_t *raw = (uint32_t*)tzinfo;
   _Static_assert(sizeof(TimezoneInfo) <= 5 * sizeof(uint32_t),
@@ -334,7 +314,7 @@ void rtc_init(void) {
   prv_restore_rtc_time_state();
   s_did_init_rtc = true;
 
-  NVIC_SetPriority(BOARD_RTC_IRQN, configKERNEL_INTERRUPT_PRIORITY);
+  NVIC_SetPriority(BOARD_RTC_IRQN, PBL_IRQ_PRIO_KERNEL);
   NVIC_EnableIRQ(BOARD_RTC_IRQN);
 
 #if TEST_RTC_FREQ
@@ -358,7 +338,7 @@ void rtc_enable_synthetic_systick(void) {
   // Now that the RTC is awake, we can switch from SysTick to RTC interrupt
   // ticks.  We need to do this so that we actually get ticks in wfi, since
   // nRF5 stops SysTick in sleep.
-  _Static_assert(RTC_TICKS_HZ == configTICK_RATE_HZ);
+  _Static_assert(RTC_TICKS_HZ == PBL_TICK_HZ);
   if (!s_did_init_rtc) {
     rtc_init();
   }

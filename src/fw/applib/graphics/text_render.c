@@ -4,12 +4,11 @@
 #include "text_render.h"
 
 #include "gcontext.h"
-#include "graphics.h"
 #include "process_state/app_state/app_state.h"
 #include "system/passert.h"
 #include "text_resources.h"
 #include "util/bitset.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 
 #if !defined(__clang__)
 #pragma GCC optimize ("O2")
@@ -60,11 +59,16 @@ void render_glyph(GContext* const ctx, const uint32_t codepoint, FontInfo* const
     return;
   }
 
-  const GlyphData* glyph = text_resources_get_glyph(&ctx->font_cache, codepoint, font);
+  int16_t baseline_adjust = 0;
+  const GlyphData* glyph = text_resources_get_glyph(&ctx->font_cache, codepoint, font,
+                                                    &baseline_adjust);
 
   PBL_ASSERTN(glyph);
   // Bitfiddle the metrics data:
   GRect glyph_metrics = get_glyph_rect(glyph);
+  // Sit a substituted glyph on the primary font's baseline. Must happen before the target and
+  // clipping rects are derived from it.
+  glyph_metrics.origin.y += baseline_adjust;
 
   // Calculate the box that we intend to draw to the screen, in screen coordinates
   GRect glyph_target = {
@@ -119,9 +123,9 @@ void render_glyph(GContext* const ctx, const uint32_t codepoint, FontInfo* const
 
   // The number of bits between the beginning of dest_block and glyph_block.
   // If x is negative we need to be fancy to get the rounded down remainder. This
-  // is the number of bits to the right of the next 32-bit boundry to the left.
+  // is the number of bits to the right of the next 32-bit boundary to the left.
   // For example, if x is -5 we want this shift to be 27, since -32 (the nearest
-  // boundry) + 27 = -5
+  // boundary) + 27 = -5
   const uint8_t dest_shift_at_line_begin = (x >= 0) ?
       x % 32 :
       (x - ((x / 32) * 32));

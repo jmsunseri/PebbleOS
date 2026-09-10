@@ -11,48 +11,41 @@
 #include "console_internal.h"
 #include "dbgserial.h"
 #include "debug/flash_logging.h"
-#include "drivers/flash.h"
-#include "drivers/task_watchdog.h"
+#include <pbl/drivers/flash.h>
+#include <pbl/drivers/task_watchdog.h>
 #include "flash_region/flash_region.h"
 #include "kernel/event_loop.h"
-#include "kernel/logging_private.h"
+#include "logging/logging_private.h"
 #include "kernel/pbl_malloc.h"
 #include "kernel/pebble_tasks.h"
+#include "kernel/remote_input.h"
 #include "kernel/util/delay.h"
 #include "kernel/util/factory_reset.h"
 #include "kernel/util/sleep.h"
-#include "process_management/app_manager.h"
 #include "process_management/worker_manager.h"
 #include "prompt.h"
-#include "resource/resource_storage_flash.h"
 #include "pbl/services/compositor/compositor.h"
 #include "pbl/services/system_task.h"
 #include "pbl/services/filesystem/pfs.h"
 #include "syscall/syscall.h"
 #include "system/bootbits.h"
 #include "system/hexdump.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "system/reboot_reason.h"
 #include "system/reset.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 #include "util/net.h"
-#include "util/string.h"
+#include "pbl/util/string.h"
 
 #include <cmsis_core.h>
 
 #include <bluetooth/responsiveness.h>
 #include <bluetooth/gatt_discovery.h>
 
-#if MEMFAULT
-#include "memfault/components.h"
-#endif
-
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
-
-static TimerID s_console_button_timer = TIMER_INVALID_ID;
 
 static void prv_pfs_stress_callback(void *data) {
   pfs_remove_files(NULL);
@@ -323,7 +316,6 @@ void command_flash_validate(void) {
   prompt_send_response("OK");
 }
 
-
 //! Some flash chips have an accelerated method of checking for erased sectors. This is a sanity
 //! check against that method. It reads the bytes in raw form and makes sure it is really erased.
 static bool prv_is_really_erased(uint32_t addr, bool is_subsector) {
@@ -559,7 +551,6 @@ bailout:
   }
 }
 
-
 void command_flash_stress(const char *n) {
   int count = atoi(n);
   // WARNING!! Running this test can shorten the life of your flash chip because it violates the
@@ -620,7 +611,6 @@ void command_flash_benchmark() {
   s_flash_benchmark(1024);
 }
 
-
 void command_reset() {
   prompt_command_finish();
 
@@ -671,7 +661,7 @@ void command_stuck_timer(void) {
   new_timer_start(timer, 10, stuck_timer_cb, NULL, 0 /*flags*/);
 }
 
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 
 void command_assert_fail(void) {
   prompt_command_finish();
@@ -723,50 +713,6 @@ void command_boot_bit_set(const char* bit, const char* value) {
   prompt_send_response("OK bit assigned");
 }
 
-typedef struct {
-  ButtonId button_id;
-  bool button_is_held_down;
-  uint32_t num_presses_remaining;
-  uint32_t hold_down_time_ms;
-  uint32_t delay_between_presses_ms;
-} ButtonPressNewTimerContext;
-
-// This is a callback to only be used in conjunction with command_button_press() and
-// command_button_press_multiple()
-static void command_button_press_callback(void *cb_data) {
-  ButtonPressNewTimerContext *context = cb_data;
-
-  const bool button_is_held_down = context->button_is_held_down;
-  // Choose the next event type to emit and the next timeout based on the current button state
-  PebbleEventType next_event_type = button_is_held_down ? PEBBLE_BUTTON_UP_EVENT :
-                                                          PEBBLE_BUTTON_DOWN_EVENT;
-  const uint32_t next_timeout_ms = button_is_held_down ? context->delay_between_presses_ms :
-                                                         context->hold_down_time_ms;
-
-  // Add the next button event to the queue
-  PebbleEvent next_button_event = {
-    .type = next_event_type,
-    .button.button_id = context->button_id,
-  };
-  event_put(&next_button_event);
-
-  // Decrement the number of presses remaining if the button is currently held down (because we
-  // just pushed it up by adding that event)
-  if (button_is_held_down) {
-    context->num_presses_remaining--;
-  }
-
-  if (context->num_presses_remaining > 0) {
-    // Toggle the state of the button
-    context->button_is_held_down = !button_is_held_down;
-    // Restart the timer
-    new_timer_start(s_console_button_timer, next_timeout_ms, command_button_press_callback,
-                    context, 0 /* flags */);
-  } else {
-    kernel_free(context);
-  }
-}
-
 static bool prv_convert_and_validate_timeout_value(const char *timeout_string,
                                                    uint32_t default_value,
                                                    uint32_t *result) {
@@ -802,8 +748,6 @@ static void prv_button_press_multiple(const char *button_index, const char *pres
     goto error;
   }
 
-  const ButtonId button_id = (ButtonId)button;
-
   uint32_t num_presses = 1;
   // If presses is NULL, default to 1; otherwise convert the char string to an integer
   if (presses) {
@@ -831,44 +775,19 @@ static void prv_button_press_multiple(const char *button_index, const char *pres
     goto error;
   }
 
-  // Initialize timer on first use
-  if (s_console_button_timer == TIMER_INVALID_ID) {
-    s_console_button_timer = new_timer_create();
+  // The press sequence itself is synthesized by the shared input injection service, so the console
+  // and the remote input endpoint drive buttons through exactly one implementation.
+  switch (remote_input_button_press((ButtonId)button, num_presses, hold_down_timeout_ms,
+                                    delay_between_presses_timeout_ms)) {
+    case RemoteInputResult_Ok:
+      prompt_send_response("OK");
+      return;
+    case RemoteInputResult_Busy:
+      prompt_send_response("BUSY");
+      return;
+    case RemoteInputResult_Invalid:
+      break;
   }
-
-  // If the callback is already scheduled, notify busy and exit
-  if (new_timer_scheduled(s_console_button_timer, NULL)) {
-    prompt_send_response("BUSY");
-    return;
-  }
-
-  // Construct our new_timer context, will be freed in command_button_press_callback()
-  ButtonPressNewTimerContext *new_timer_context = kernel_malloc(sizeof(ButtonPressNewTimerContext));
-  if (!new_timer_context) {
-    goto error;
-  }
-  *new_timer_context = (ButtonPressNewTimerContext) {
-    .button_id = button_id,
-    .button_is_held_down = false,
-    .num_presses_remaining = num_presses,
-    .hold_down_time_ms = hold_down_timeout_ms,
-    .delay_between_presses_ms = delay_between_presses_timeout_ms,
-  };
-
-  // In order to avoid race conditions between button events and timers being registered, drive the
-  // entire multi click sequence in new_timers. The callback will re-register this timer as needed
-  // for each subsequent click event in the sequence.
-  const bool timer_started = new_timer_start(s_console_button_timer, 0,
-                                             command_button_press_callback, new_timer_context,
-                                             0 /* flags */);
-
-  if (!timer_started) {
-    kernel_free(new_timer_context);
-    goto error;
-  }
-
-  prompt_send_response("OK");
-  return;
 
   error:
     prompt_send_response("ERROR");
@@ -888,24 +807,11 @@ void command_button_press_multiple(const char *button_index, const char *num_pre
   prv_button_press_multiple(button_index, num_presses, hold_down_time_ms, delay_between_presses_ms);
 }
 
-static void prv_button_press_short_launcher_task_cb(void *data) {
-  uintptr_t button = (uintptr_t)data;
-  PebbleEvent e = {
-    .type = PEBBLE_BUTTON_DOWN_EVENT,
-    .button.button_id = button
-  };
-  event_put(&e);
-  e = (PebbleEvent) {
-    .type = PEBBLE_BUTTON_UP_EVENT,
-    .button.button_id = button
-  };
-  event_put(&e);
-}
-
-void command_button_press_short(const char* button_index) {
-  uintptr_t button = (uintptr_t)atoi(button_index);
-  launcher_task_add_callback(prv_button_press_short_launcher_task_cb, (void *)button);
-  prompt_send_response("OK");
+void command_button_press_short(const char *button_index) {
+  // Back-to-back down/up, as this command has always meant. Routing it through the shared service
+  // gives it the button validation and single-flight check it never had, and keeps it from racing
+  // a sequence started by the console or the remote input endpoint.
+  prv_button_press_multiple(button_index, "1", "0", "0");
 }
 
 void command_factory_reset(void) {
@@ -993,8 +899,8 @@ void command_log_dump_spam(void) {
 
 #ifdef TEST_FLASH_LOCK_PROTECTION
 #include "flash_region/flash_region.h"
-#include "drivers/task_watchdog.h"
-#include "drivers/watchdog.h"
+#include <pbl/drivers/task_watchdog.h>
+#include <pbl/drivers/watchdog.h>
 
 // This test attempts to write over every region of the flash.
 // If we can still boot PRF after running this, it means we have successfully
@@ -1105,12 +1011,12 @@ void command_audit_delay_us(void) {
 }
 
 #if !defined(CONFIG_RELEASE) && defined(CONFIG_DISPLAY_JDI_SF32LB)
-#include "drivers/display/sf32lb/display_jdi.h"
+#include <pbl/drivers/display/sf32lb/display_jdi.h>
 
 // Arms the JDI display driver to drop the next LCDC transfer-complete
 // callback, simulating the silent-loss failure mode (e.g. SiFli HAL ICB
 // overflow). The silent-loss timer should fire ~500ms later and PBL_CROAK,
-// producing a Memfault coredump and a watch reboot.
+// producing a coredump and a watch reboot.
 void command_display_drop_complete(void) {
   display_jdi_test_drop_next_complete();
   prompt_send_response("display: armed drop of next LCDC complete; PBL_CROAK in ~500ms");
@@ -1151,7 +1057,6 @@ static GAPLEConnection *prv_get_le_connection_and_print_info(void) {
     prompt_send_response_fmt(buf, sizeof(buf), "Connected to " BT_DEVICE_ADDRESS_FMT,
                              BT_DEVICE_ADDRESS_XPLODE(conn->device.address));
   }
-
 
   return conn;
 }
@@ -1229,32 +1134,10 @@ void command_ble_logging_get_level(void) {
   }
 }
 
-#if MEMFAULT
-void command_mflt_export(void) {
-  memfault_data_export_dump_chunks();
-}
-
-void command_mflt_collect(void) {
-  void memfault_chunk_collect(void);
-  memfault_chunk_collect();
-}
-
-void command_mflt_metrics_dump(void) {
-  memfault_metrics_heartbeat_debug_print();
-}
-
-void command_mflt_device_info(void) {
-  memfault_build_info_dump();
-  memfault_device_info_dump();
-}
-#endif  // MEMFAULT
-
 #ifdef CONFIG_PERFORMANCE_TESTS
 // for task_watchdog_bit_set_all
-#include "drivers/task_watchdog.h"
+#include <pbl/drivers/task_watchdog.h>
 // For taskYIELD()
-#include "FreeRTOS.h"
-#include "task.h"
 
 // Average this many iterations of the text test for getting useful perf numbers.
 #define PERFTEST_TEXT_ITERATIONS 5
@@ -1367,7 +1250,7 @@ static const PerftestTextString s_perftest_text_strings[TestStringCount] = {
               "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM"
               "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM",
     .lengths = {
-#if defined(CONFIG_BOARD_FAMILY_OBELIX) || defined(CONFIG_BOARD_FAMILY_GETAFIX)
+#if defined(CONFIG_BOARD_OBELIX) || defined(CONFIG_BOARD_GETAFIX)
       [TestStringFont_Gothic18] = 204,
       [TestStringFont_Gothic24B] = 144,
       [TestStringFont_Other] = STRING_LENGTH_MAX,
@@ -1386,7 +1269,7 @@ static const PerftestTextString s_perftest_text_strings[TestStringCount] = {
               "をんアイウエオサシスセソタチツテトナニヌネノ"
               "ハヒフヘホマミムメモヤユヨラリルレロワヲン",
     .lengths = {
-#if defined(CONFIG_BOARD_FAMILY_OBELIX) || defined(CONFIG_BOARD_FAMILY_GETAFIX)
+#if defined(CONFIG_BOARD_OBELIX) || defined(CONFIG_BOARD_GETAFIX)
       [TestStringFont_Gothic18] = 579,
       [TestStringFont_Gothic24B] = 291,
       [TestStringFont_Other] = STRING_LENGTH_MAX,
@@ -1400,7 +1283,7 @@ static const PerftestTextString s_perftest_text_strings[TestStringCount] = {
               "FLASH access on Robe"
               "\xe2\x80\xa6",
     .lengths = {
-#if defined(CONFIG_BOARD_FAMILY_OBELIX) || defined(CONFIG_BOARD_FAMILY_GETAFIX)
+#if defined(CONFIG_BOARD_OBELIX) || defined(CONFIG_BOARD_GETAFIX)
       [TestStringFont_Gothic18] = 134,
       [TestStringFont_Gothic24B] = 134,
       [TestStringFont_Other] = STRING_LENGTH_MAX,
@@ -1612,3 +1495,83 @@ void command_console_disable_rx(const char *seconds_str) {
   new_timer_start(s_console_disable_rx_timer, seconds * 1000,
                   prv_console_disable_rx_timer_cb, NULL, 0 /*flags*/);
 }
+
+#ifdef CONFIG_TOUCH
+#include "applib/ui/recognizer/touch_nav.h"
+#include "kernel/ui/modals/modal_manager.h"
+#include "pbl/services/touch/touch_nav_service.h"
+#include "pbl/services/notifications/notifications.h"
+#include "pbl/services/timeline/timeline.h"
+#include <pbl/drivers/rtc.h>
+
+// TEST: inject a long scrollable notification so the modal notification touch path can be exercised
+// in QEMU (no companion needed). Includes a Dismiss action so the full-window action-bar overlay is
+// shown — that is the overlay the swap-touch fix routes around.
+// Notifications/timeline are unavailable in the recovery firmware, so this is normal-fw only.
+#ifndef CONFIG_RECOVERY_FW
+void command_notif_test(void) {
+  AttributeList attr_list = {};
+  attribute_list_add_cstring(&attr_list, AttributeIdTitle, "Touch Test");
+  attribute_list_add_cstring(
+      &attr_list, AttributeIdBody,
+      "Swipe up/down to scroll this body. Line 2. Line 3. Line 4. Line 5. Line 6. Line 7. Line 8. "
+      "Line 9. Line 10. Line 11. Line 12. Line 13. Line 14. Swipe left=BACK, right=SELECT.");
+
+  AttributeList dismiss_attr = {};
+  attribute_list_add_cstring(&dismiss_attr, AttributeIdTitle, "Dismiss");
+  TimelineItemActionGroup action_group = {
+    .num_actions = 1,
+    .actions = (TimelineItemAction[]){
+      { .id = 0, .type = TimelineItemActionTypeDismiss, .attr_list = dismiss_attr },
+    },
+  };
+
+  TimelineItem *item = timeline_item_create_with_attributes(
+      rtc_get_time(), 0, TimelineItemTypeNotification, LayoutIdNotification, &attr_list,
+      &action_group);
+  attribute_list_destroy_list(&attr_list);
+  attribute_list_destroy_list(&dismiss_attr);
+  notifications_add_notification(item);
+  timeline_item_destroy(item);
+
+  char buf[32];
+  prompt_send_response_fmt(buf, sizeof(buf), "test notification added");
+}
+#endif  // CONFIG_RECOVERY_FW
+
+void command_touch_nav_enable(void) {
+  // Run the full enable transaction (subscribe kernel/app slots + take the sensor hold), the same
+  // path the Settings toggle drives. Runtime only; not persisted. Lets QEMU/HW test the navigation
+  // itself, not just raw touch delivery.
+  touch_nav_set_enabled(true);
+  char buf[32];
+  prompt_send_response_fmt(buf, sizeof(buf), "touch nav enabled");
+}
+
+void command_touch_nav_disable(void) {
+  touch_nav_set_enabled(false);
+  char buf[32];
+  prompt_send_response_fmt(buf, sizeof(buf), "touch nav disabled");
+}
+
+void command_touch_nav_log(void) {
+  const TouchNavState *state = modal_manager_get_touch_nav_state();
+  char buf[96];
+  prompt_send_response_fmt(
+      buf, sizeof(buf),
+      "started=%u completed=%u failed=%u cancelled=%u dropped=%u gated=%u",
+      state->counters.started, state->counters.completed, state->counters.failed,
+      state->counters.cancelled, state->counters.dropped, state->counters.gated);
+
+  static const char *const kind_names[] = {"route", "emit", "drop", "gate"};
+  const uint8_t count = state->log_count;
+  for (uint8_t i = 0; i < count; i++) {
+    // Walk oldest to newest.
+    const uint8_t idx =
+        (uint8_t)((state->log_head + TOUCH_NAV_LOG_ENTRIES - count + i) % TOUCH_NAV_LOG_ENTRIES);
+    const TouchNavLogEntry *e = &state->log[idx];
+    const char *name = (e->kind < ARRAY_LENGTH(kind_names)) ? kind_names[e->kind] : "?";
+    prompt_send_response_fmt(buf, sizeof(buf), "  [%u] %s detail=%u", i, name, e->detail);
+  }
+}
+#endif

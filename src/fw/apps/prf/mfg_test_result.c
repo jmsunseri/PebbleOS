@@ -6,9 +6,9 @@
 #include <string.h>
 
 #ifdef CONFIG_MFG
-#include "drivers/flash.h"
+#include <pbl/drivers/flash.h>
 #include "flash_region/flash_region.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 #endif
 
 #define NUM_MODES 2

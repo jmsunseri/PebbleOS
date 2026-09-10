@@ -3,17 +3,12 @@
 
 #include "pbl/services/timeline/peek.h"
 
-#include "drivers/rtc.h"
-#include "kernel/event_loop.h"
+#include <pbl/drivers/rtc.h>
 #include "kernel/events.h"
 #include "kernel/pbl_malloc.h"
-#include "kernel/pebble_tasks.h"
-#include "pbl/services/system_task.h"
-#include "pbl/services/blob_db/pin_db.h"
 #include "pbl/services/timeline/timeline.h"
 #include "shell/prefs.h"
-#include "system/logging.h"
-#include "system/status_codes.h"
+#include <pbl/logging/logging.h>
 #include "util/time/time.h"
 
 typedef struct TimelinePeekEventData {

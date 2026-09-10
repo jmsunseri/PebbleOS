@@ -9,7 +9,7 @@
 #include "applib/applib_resource_private.h"
 #include "applib/graphics/graphics.h"
 #include "process_state/app_state/app_state.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "syscall/syscall.h"
 
@@ -132,7 +132,7 @@ void gbitmap_init_with_data(GBitmap *bitmap, const uint8_t *data) {
   bitmap->info.is_bitmap_heap_allocated = false;
 
   // Note that our container contains values for the origin, but we want to ignore them.
-  // This is because orginally we just serialized GBitmap to disk,
+  // This is because originally we just serialized GBitmap to disk,
   // but these fields don't really make sense for static images.
   // These origin fields are only used when reusing a byte buffer in a sub bitmap.
   // This allows us to have a shallow copy of a portion of a parent bitmap.

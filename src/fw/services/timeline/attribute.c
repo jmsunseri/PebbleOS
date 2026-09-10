@@ -7,8 +7,8 @@
 
 #include "system/passert.h"
 #include "kernel/pbl_malloc.h"
-#include "system/logging.h"
-#include "util/math.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/math.h"
 
 PBL_LOG_MODULE_DECLARE(service_timeline, CONFIG_SERVICE_TIMELINE_LOG_LEVEL);
 
@@ -71,6 +71,7 @@ static AttributeType prv_attribute_type(AttributeId id) {
     case AttributeIdMuteDayOfWeek:
     case AttributeIdHealthActivityType:
     case AttributeIdAlarmKind:
+    case AttributeIdImageAspectRatio:
       return AttributeTypeUint8;
     case AttributeIdIconTiny:
     case AttributeIdIconSmall:
@@ -505,7 +506,9 @@ bool attribute_check_serialized_list(const uint8_t *cursor, const uint8_t *val_e
     cursor += attrib_hdr->length;
     if (cursor > val_end) {
       return false;
-    } else {
+    } else if (attrib_hdr->id < NumAttributeIds) {
+      // has_attribute is indexed by id, so a phone that knows an id this firmware doesn't must not
+      // reach the write.
       has_attribute[attrib_hdr->id] = true;
     }
   }

@@ -6,29 +6,25 @@
 
 #include "comm/ble/gap_le_connect.h"
 #include "comm/ble/gap_le_connection.h"
-#include "comm/ble/gap_le_slave_reconnect.h"
 #include "comm/ble/kernel_le_client/kernel_le_client.h"
-#include "comm/bt_lock.h"
 #include "console/prompt.h"
 #include "kernel/event_loop.h"
 #include "kernel/pbl_malloc.h"
-#include "os/mutex.h"
-#include "pbl/services/analytics/analytics.h"
+#include "pbl/kernel/mutex.h"
 #include "pbl/services/bluetooth/pairability.h"
 #include "pbl/services/bluetooth/local_addr.h"
 #include "pbl/services/shared_prf_storage/shared_prf_storage.h"
-#include "pbl/services/system_task.h"
 #include "pbl/services/settings/settings_file.h"
 #include "system/hexdump.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
-#include "util/math.h"
-#include "util/string.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/math.h"
+#include "pbl/util/string.h"
 
 #include <bluetooth/bonding_sync.h>
-#include <btutil/bt_device.h>
-#include <btutil/sm_util.h>
+#include <pbl/btutil/bt_device.h>
+#include <pbl/btutil/sm_util.h>
 
 PBL_LOG_MODULE_DECLARE(service_bluetooth, CONFIG_SERVICE_BLUETOOTH_LOG_LEVEL);
 
@@ -88,7 +84,7 @@ typedef struct PACKED {
 #define BT_PERSISTENT_STORAGE_FILE_SIZE (4096)
 
 //! All of the actual pairings use a BTBondingID as a key. This is because with BLE pairings an
-//! address is not alwaywas available, and it made it easier to have BT Classic and BLE pairings
+//! address is not alway available, and it made it easier to have BT Classic and BLE pairings
 //! use the same type of key. When adding pairings there is no BTBondingID so a free key has to
 //! be found by iterating over all possible keys.
 
@@ -111,18 +107,18 @@ static const char BLE_PINNED_ADDRESS_KEY[] = "BLE_PINNED_ADDRESS";
 
 static uint8_t s_bt_persistent_storage_updates = 0;
 
-static PebbleMutex *s_db_mutex = NULL;
+static PBL_MUTEX_DEFINE(s_db_mutex);
 
 //! Cache of the last connected system session capabilities. Updated in flash when we get new flags
 //! @note prv_lock() must be held when accessing this variable.
 static PebbleProtocolCapabilities s_cached_system_capabilities;
 
 static void prv_lock(void) {
-  mutex_lock(s_db_mutex);
+  pbl_mutex_lock(&s_db_mutex, PBL_FOREVER);
 }
 
 static void prv_unlock(void) {
-  mutex_unlock(s_db_mutex);
+  pbl_mutex_unlock(&s_db_mutex);
 }
 
 static bool prv_bt_persistent_storage_get_ble_smpairinginfo_by_id(
@@ -153,6 +149,9 @@ static void prv_update_bondings(BTBondingID id, BtPersistBondingType type) {
 //! Returns the size of the data read. If the buffer provided is too small then 0 is returned
 static int prv_file_get(const void *key, size_t key_len, void *data_out, size_t buf_len) {
   unsigned int data_len = 0;
+  // Zero the output up front so callers that ignore the return value (a 0 length on
+  // open/read failure or an oversized record) read defined zeros, not stack garbage.
+  memset(data_out, 0, buf_len);
   prv_lock();
   {
     SettingsFile fd;
@@ -335,8 +334,8 @@ static bool prv_any_pinned_ble_pairings_itr(SettingsFile *file,
   BTBondingID key;
   info->get_key(file, (uint8_t*) &key, info->key_len);
 
-  BtPersistBondingData data;
-  info->get_val(file, &data, sizeof(data));
+  BtPersistBondingData data = {};
+  info->get_val(file, &data, MIN((unsigned)info->val_len, sizeof(data)));
   if (data.ble_data.requires_address_pinning) {
     bool *has_pinned_ble_pairings = context;
     *has_pinned_ble_pairings = true;
@@ -476,9 +475,11 @@ bool prv_has_active_gateway_by_type(BtPersistBondingType desired_type) {
 static void prv_update_active_gateway_if_needed(BTBondingID bonding, BtPersistBondingOp op) {
   // Invalidate the active gateway if it is getting deleted
   if (op == BtPersistBondingOpWillDelete) {
+    // get_active_gateway leaves the out param untouched when there is no active
+    // gateway, so only compare when it reports success.
     BTBondingID current_active_gateway;
-    bt_persistent_storage_get_active_gateway(&current_active_gateway, NULL);
-    if (current_active_gateway == bonding) {
+    if (bt_persistent_storage_get_active_gateway(&current_active_gateway, NULL) &&
+        current_active_gateway == bonding) {
       bt_persistent_storage_set_active_gateway(BT_BONDING_ID_INVALID);
     }
   }
@@ -797,7 +798,7 @@ bool bt_persistent_storage_update_ble_device_name(BTBondingID bonding, const cha
   GapBondingFileSetStatus status;
   status = prv_file_set(&bonding, sizeof(bonding), &data, sizeof(data));
 
-  // If this is the gateway, update SPRF so our pairing info betwen PRF and normal
+  // If this is the gateway, update SPRF so our pairing info between PRF and normal
   // FW is in sync
   if (data.ble_data.is_gateway && (status == GapBondingFileSetUpdated)) {
     prv_update_bondings(bonding, BtPersistBondingTypeBLE);
@@ -1288,6 +1289,7 @@ bool bt_persistent_storage_delete_cccd(const BTDeviceInternal *peer, uint16_t ch
     return false;
   }
 
+  cccd_id = itr_data.id;
   if (prv_file_set(&cccd_id, sizeof(cccd_id), NULL, 0) == GapBondingFileSetFail) {
     return false;
   }
@@ -1462,7 +1464,6 @@ void bt_persistent_storage_set_cached_system_capabilities(
 void bt_persistent_storage_init(void) {
   // Note: this gets called well before the BT stack is initialized, make sure there is no code
   // that tries to use the BT stack in this path.
-  s_db_mutex = mutex_create();
 
   prv_load_data_from_prf();
 

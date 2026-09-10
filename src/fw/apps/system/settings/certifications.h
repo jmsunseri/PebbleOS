@@ -62,7 +62,7 @@ typedef struct CertificationIds {
 static const RegulatoryFlags s_regulatory_flags_fallback = {
 };
 
-// Certifiation ID strings used for bigboards and such.
+// Certification ID strings used for bigboards and such.
 static const CertificationIds s_certification_ids_fallback = {
   .company_name = "ACME Inc.",
   .product_type = "Product Type",
@@ -105,10 +105,10 @@ static const CertificationIds s_certification_ids_obelix = {
 };
 
 static const RegulatoryFlags * prv_get_regulatory_flags(void) {
-#ifdef CONFIG_BOARD_FAMILY_ASTERIX
+#ifdef CONFIG_BOARD_ASTERIX
   // TODO: add applicable flags
   return &s_regulatory_flags_fallback;
-#elif defined(CONFIG_BOARD_FAMILY_OBELIX)
+#elif defined(CONFIG_BOARD_OBELIX)
   return &s_regulatory_flags_obelix;
 #else
   return &s_regulatory_flags_fallback;
@@ -117,10 +117,10 @@ static const RegulatoryFlags * prv_get_regulatory_flags(void) {
 
 //! Don't call this function directly. Use the prv_get_*_id functions instead.
 static const CertificationIds * prv_get_certification_ids(void) {
-#ifdef CONFIG_BOARD_FAMILY_ASTERIX
+#ifdef CONFIG_BOARD_ASTERIX
   // TODO: add real certification ids
   return &s_certification_ids_fallback;
-#elif defined(CONFIG_BOARD_FAMILY_OBELIX)
+#elif defined(CONFIG_BOARD_OBELIX)
   return &s_certification_ids_obelix;
 #else
   return &s_certification_ids_fallback;

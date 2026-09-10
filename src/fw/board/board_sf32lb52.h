@@ -9,7 +9,7 @@
 #include <stdbool.h>
 
 #include "bf0_hal_pinmux.h"
-#include "drivers/button_id.h"
+#include <pbl/drivers/button_id.h>
 
 #define IRQ_PRIORITY_INVALID (1 << __NVIC_PRIO_BITS)
 
@@ -92,10 +92,11 @@ typedef struct {
   //ambient light config
   uint32_t ambient_light_dark_threshold;
   uint32_t ambient_k_delta_threshold;
-#ifdef CONFIG_DYNAMIC_BACKLIGHT
-  //dynamic backlight thresholds
-  uint32_t dynamic_backlight_min_threshold;
-#endif
+  // Raw-count -> lux conversion: lux = (level - offset) * num / den.
+  // den == 0 means no conversion available for this board.
+  uint32_t ambient_light_lux_dark_offset;
+  uint32_t ambient_light_lux_num;
+  uint32_t ambient_light_lux_den;
 #ifdef CONFIG_BACKLIGHT_HAS_COLOR
   // Default RGB backlight color (packed 0x00RRGGBB), applied when no app
   // override is set. User-preference overrides this via backlight_set_color().
@@ -138,13 +139,12 @@ typedef struct {
   const MagConfig mag_config;
 } BoardConfigMag;
 
-#include "drivers/flash/qspi_flash.h"
-#include "drivers/flash/qspi_flash_definitions.h"
-#include "drivers/qspi_definitions.h"
-#include "drivers/uart/sf32lb.h"
-#include "drivers/display/sf32lb/display_jdi.h"
-#include "drivers/mic/sf32lb52/pdm_definitions.h"
-#include "drivers/speaker/sf32lb52/audio_definitions.h"
+#include <pbl/drivers/flash/qspi_flash_definitions.h>
+#include <pbl/drivers/qspi_definitions.h>
+#include <pbl/drivers/uart/sf32lb.h>
+#include <pbl/drivers/display/sf32lb/display_jdi.h>
+#include <pbl/drivers/mic/sf32lb52/pdm_definitions.h>
+#include <pbl/drivers/speaker/sf32lb52/audio_definitions.h>
 
 typedef const struct UARTDevice UARTDevice;
 typedef const struct I2CBus I2CBus;
@@ -156,8 +156,8 @@ typedef const struct QSPIFlash QSPIFlash;
 typedef const struct DisplayJDIDevice DisplayJDIDevice;
 typedef const struct AudioDevice AudioDevice;
 
-#include "drivers/i2c/definitions.h"
-#include "drivers/i2c/sf32lb.h"
+#include <pbl/drivers/i2c/definitions.h>
+#include <pbl/drivers/i2c/sf32lb.h>
 
 void board_early_init(void);
 void board_init(void);

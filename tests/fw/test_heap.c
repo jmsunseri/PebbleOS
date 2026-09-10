@@ -1,7 +1,7 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "util/heap.h"
+#include "pbl/util/heap.h"
 
 #include "applib/app_heap_util.h"
 
@@ -23,7 +23,6 @@
 // Stubs
 ///////////////////////////////////////////////////////////
 
-void MPU_vTaskSuspendAll(void) {}
 void MPU_xTaskResumeAll(void) {}
 
 // Tests

@@ -9,14 +9,13 @@
 #include "comm/bluetooth_analytics.h"
 #include "comm/bt_conn_mgr.h"
 #include "comm/bt_lock.h"
-#include "drivers/rtc.h"
-#include "kernel/pbl_malloc.h"
+#include <pbl/drivers/rtc.h>
 #include "pbl/services/analytics/analytics.h"
 #include "pbl/services/new_timer/new_timer.h"
-#include "system/logging.h"
+#include "pbl/services/system_task.h"
+#include <pbl/logging/logging.h>
 #include "util/time/time.h"
 
-#include <bluetooth/bluetooth_types.h>
 #include <stdint.h>
 
 // [MT] See page 129 of BLE Developer's Handbook (R. Heydon) and also
@@ -64,7 +63,11 @@
 //! See v4.2 "9.3.12 Connection Interval Timing Parameters":
 //! "The Peripheral device should not perform a Connection Parameter Update procedure
 //! within TGAP(conn_pause_peripheral = 5 seconds) after establishing a connection."
-#define REQUIRED_INIT_PAUSE_S (5)
+//! We deliberately deviate from this recommendation ("should", not "shall"): iOS
+//! creates the connection with a 720ms supervision timeout and never raises it on
+//! its own, so the link is fragile until our first update request is granted. See
+//! also the note below about Apple's relaxed handling of TGAP timings.
+#define REQUIRED_INIT_PAUSE_S (1)
 #define REQUIRED_INIT_PAUSE_TICKS (REQUIRED_INIT_PAUSE_S * RTC_TICKS_HZ)
 
 //! Try 3 times before giving up.
@@ -103,6 +106,8 @@ static void prv_analytics_stop_conn_interval_timers(void) {
   PBL_ANALYTICS_TIMER_STOP(ble_conn_itvl_min_time_ms);
   PBL_ANALYTICS_TIMER_STOP(ble_conn_itvl_mid_time_ms);
   PBL_ANALYTICS_TIMER_STOP(ble_conn_itvl_max_time_ms);
+  PBL_ANALYTICS_TIMER_STOP(ble_conn_itvl_other_time_ms);
+  PBL_ANALYTICS_TIMER_STOP(ble_conn_slave_lat0_time_ms);
 }
 
 //! Classify the actual connection interval into a ResponseTimeState based on
@@ -116,11 +121,12 @@ static ResponseTimeState prv_classify_conn_interval(uint16_t conn_interval_1_25m
       return (ResponseTimeState)state;
     }
   }
-  // Outside all known ranges, assume Max (slowest)
-  return ResponseTimeMax;
+  // Outside all known ranges (only used for analytics bucketing)
+  return ResponseTimeInvalid;
 }
 
-static void prv_analytics_update_conn_interval(uint16_t conn_interval_1_25ms) {
+static void prv_analytics_update_conn_params(uint16_t conn_interval_1_25ms,
+                                             uint16_t slave_latency_events) {
   prv_analytics_stop_conn_interval_timers();
 
   switch (prv_classify_conn_interval(conn_interval_1_25ms)) {
@@ -134,7 +140,14 @@ static void prv_analytics_update_conn_interval(uint16_t conn_interval_1_25ms) {
       PBL_ANALYTICS_TIMER_START(ble_conn_itvl_max_time_ms);
       break;
     default:
+      PBL_ANALYTICS_TIMER_START(ble_conn_itvl_other_time_ms);
       break;
+  }
+
+  // Interval buckets alone cannot distinguish a link that never got its slave
+  // latency applied (~Nx the connection-event duty at the same interval).
+  if (slave_latency_events == 0U) {
+    PBL_ANALYTICS_TIMER_START(ble_conn_slave_lat0_time_ms);
   }
 }
 
@@ -225,10 +238,11 @@ retry:
                   prv_watchdog_timer_callback, connection, 0);
 }
 
-static void prv_watchdog_timer_callback(void *ctx) {
-  // This should all take very little time, so just execute on NewTimer task:
+static void prv_watchdog_system_task_callback(void *ctx) {
   bt_lock();
   GAPLEConnection *connection = (GAPLEConnection *)ctx;
+  // The connection may have gone away between scheduling and execution, so
+  // only dereference it after re-validating it against the connection list.
   if (gap_le_connection_is_valid(connection)) {
     // Override the flag:
     connection->param_update_info.is_request_pending = false;
@@ -240,6 +254,13 @@ static void prv_watchdog_timer_callback(void *ctx) {
     prv_request_params_update(connection, state);
   }
   bt_unlock();
+}
+
+static void prv_watchdog_timer_callback(void *ctx) {
+  // NewTimers callbacks must never block on bt_lock: every other timer in the
+  // system (vibes, UI timeouts) is stalled behind it while the BT stack holds
+  // the lock. Defer to KernelBG, which re-validates the connection.
+  system_task_add_callback(prv_watchdog_system_task_callback, ctx);
 }
 
 void gap_le_connect_params_request(GAPLEConnection *connection,
@@ -274,8 +295,8 @@ static void prv_evaluate(GAPLEConnection *connection, ResponseTimeState desired_
   if (prv_do_actual_params_match_desired_state(connection, desired_state, NULL)) {
     conn_mgr_handle_desired_state_granted(connection, desired_state);
 
-    // If the timer callback is executing (waiting on bt_lock) at this point, it's not a problem
-    // because the actual vs desired state gets checked in the timer callback path as well.
+    // If the deferred KernelBG callback is already queued or waiting on bt_lock at this point,
+    // it's not a problem because the actual vs desired state gets checked in that path as well.
     new_timer_stop(connection->param_update_info.watchdog_timer);
     return;
   }
@@ -324,7 +345,8 @@ void bt_driver_handle_le_conn_params_update_event(const BleConnectionUpdateCompl
   const bool local_is_master = connection->local_is_master;
   if (!local_is_master) {
      bluetooth_analytics_handle_connection_params_update(params);
-     prv_analytics_update_conn_interval(params->conn_interval_1_25ms);
+     prv_analytics_update_conn_params(params->conn_interval_1_25ms, params->slave_latency_events);
+     PBL_ANALYTICS_ADD(ble_conn_param_update_count, 1);
   }
 
   prv_evaluate(connection, desired_state);

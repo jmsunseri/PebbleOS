@@ -6,11 +6,11 @@
 #include "resource/resource.h"
 #include "resource/resource_ids.auto.h"
 #include "pbl/services/clock.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
-#include <util/attributes.h>
-#include <util/size.h>
+#include <pbl/util/attributes.h>
+#include <pbl/util/size.h>
 
 #include <string.h>
 
@@ -131,7 +131,7 @@ bool timezone_database_load_region_info(uint16_t region_id, TimezoneInfo *tz_inf
 }
 
 bool timezone_database_load_region_name(uint16_t region_id, char *region_name) {
-  if (region_id > timezone_database_get_region_count()) {
+  if (region_id >= timezone_database_get_region_count()) {
     return false;
   }
 

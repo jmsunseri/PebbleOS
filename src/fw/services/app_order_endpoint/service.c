@@ -1,21 +1,14 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "process_management/app_install_manager_private.h"
 #include "pbl/services/process_management/app_order_storage.h"
 #include "pbl/services/comm_session/session.h"
-#include "system/hexdump.h"
-#include "system/logging.h"
-#include "system/passert.h"
-#include "system/status_codes.h"
-#include "util/uuid.h"
-
-#include <stdbool.h>
-#include <string.h>
+#include <pbl/logging/logging.h>
+#include "pbl/util/uuid.h"
 
 PBL_LOG_MODULE_DEFINE(service_app_order_endpoint, CONFIG_SERVICE_APP_ORDER_ENDPOINT_LOG_LEVEL);
 
-//! @file app_order_endpoint.c
+//! @file
 //! App Order Endpoint
 //!
 //! There is only 1 way to use this endpoint

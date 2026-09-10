@@ -6,8 +6,6 @@
 #include "window.h"
 #include "window_stack.h"
 
-#include "util/list.h"
-
 //! @addtogroup UI
 //! @{
 //!   @addtogroup WindowStack Window Stack

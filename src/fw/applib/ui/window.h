@@ -112,6 +112,17 @@ typedef struct Window {
   bool in_click_config_provider:1;
 
   //! @internal
+  //! If set, the touch-nav bridge must not emulate buttons for this window (Tier-2 is off).
+  //! A Tier-1 widget sets this so its own recognizers, not the system bridge, drive the gesture.
+  bool touch_bridge_disabled:1;
+
+  //! @internal
+  //! If set, the touch-nav bridge only synthesizes a button for a tap landing on an action-bar
+  //! icon zone; a tap anywhere else is dropped instead of falling back to SELECT. Swipes are
+  //! unaffected. @see \ref window_set_touch_tap_requires_action_bar()
+  bool touch_tap_requires_action_bar:1;
+
+  //! @internal
   //! If a click config provider was changed while the window was covered by a modal,
   //! this flag is used to indicate that it should be called when uncovered.
   bool is_waiting_for_click_config:1;
@@ -165,7 +176,7 @@ typedef struct Window {
 //! @param debug_name The window's debug name
 void window_init(Window *window, const char* debug_name);
 
-//! Creates a new Window on the heap and initalizes it with the default values.
+//! Creates a new Window on the heap and initializes it with the default values.
 //!
 //! * Background color : `GColorWhite`
 //! * Root layer's `update_proc` : function that fills the window's background using `background_color`.
@@ -315,14 +326,14 @@ struct Layer* window_get_root_layer(const Window *window);
 void window_set_background_color(Window *window, GColor background_color);
 void window_set_background_color_2bit(Window *window, GColor2 background_color);
 
-//! Sets whether or not the window is fullscreen, consequently hiding the sytem status bar.
+//! Sets whether or not the window is fullscreen, consequently hiding the system status bar.
 //! @note This needs to be called before pushing a window to the window stack.
 //! @param window The window for which to set its full-screen property
 //! @param enabled True to make the window full-screen or false to leave space for the system status bar.
 //! @see \ref window_get_fullscreen()
 void window_set_fullscreen(Window *window, bool enabled);
 
-//! Gets whether the window is full-screen, consequently hiding the sytem status bar.
+//! Gets whether the window is full-screen, consequently hiding the system status bar.
 //! @param window The window for which to get its full-screen property
 //! @return True if the window is marked as fullscreen, false if it is not marked as fullscreen.
 bool window_get_fullscreen(const Window *window);
@@ -398,6 +409,21 @@ void window_attach_recognizer(Window *window, Recognizer *recognizer);
 //! @param recognizer \ref Recognizer to detach
 void window_detach_recognizer(Window *window, Recognizer *recognizer);
 
+//! Disable the system touch-navigation bridge for a window. With the bridge disabled the system
+//! recognizer set fails on Touchdown for this window, handing every touch to the recognizers the
+//! app attached, so an app can take over touch input instead of the built-in button emulation.
+//! @param window \ref Window to configure
+//! @param disabled true to disable the bridge for this window
+void window_set_touch_bridge_disabled(Window *window, bool disabled);
+
+//! Restrict the touch-navigation bridge's tap handling for a window to action-bar icon zones:
+//! a tap outside the bar (or on a zone without an icon) is dropped instead of synthesizing
+//! SELECT. Swipe navigation is unaffected. Used by windows whose SELECT action is too easy to
+//! trigger with an accidental screen touch (e.g. the Music app's play/pause).
+//! @param window \ref Window to configure
+//! @param requires_action_bar true to drop taps that miss the action-bar icon zones
+void window_set_touch_tap_requires_action_bar(Window *window, bool requires_action_bar);
+
 //! Get the recognizers attached to a window
 //! @param window \ref Window from which to get recognizers
 //! @return recognizer list
@@ -406,6 +432,14 @@ RecognizerList *window_get_recognizer_list(Window *window);
 //! Get the recognizer manager that manages recognizers attached to this window and all layers
 //! attached to the window
 RecognizerManager *window_get_recognizer_manager(Window *window);
+
+//! Give the window's recognizer manager input focus: cancel and reset any ongoing gesture and point
+//! the manager at this window.
+void window_became_input_focus(Window *window);
+
+//! Take input focus away from the window: cancel and reset any ongoing gesture and clear the
+//! manager's window pointer. A no-op unless the window currently holds input focus.
+void window_lost_input_focus(Window *window);
 
 //!   @} // end addtogroup Window
 //! @} // end addtogroup UI

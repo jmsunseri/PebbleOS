@@ -5,7 +5,6 @@
 
 #include "applib/applib_malloc.auto.h"
 #include "applib/event_service_client.h"
-#include "applib/graphics/graphics.h"
 #include "applib/ui/action_menu_hierarchy.h"
 #include "applib/ui/action_menu_window_private.h"
 #include "applib/ui/dialogs/dialog.h"
@@ -25,7 +24,6 @@
 #include "popups/ble_hrm/ble_hrm_stop_sharing_popup.h"
 #include "popups/notifications/notification_window.h"
 #include "process_state/app_state/app_state.h"
-#include "pbl/services/analytics/analytics.h"
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/event_service.h"
 #include "pbl/services/evented_timer.h"
@@ -39,10 +37,9 @@
 #include "pbl/services/notifications/notification_storage.h"
 #include "pbl/services/timeline/timeline.h"
 #include "pbl/services/timeline/timeline_resources.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/size.h"
-#include "util/struct.h"
+#include "pbl/util/size.h"
 
 PBL_LOG_MODULE_DECLARE(service_timeline, CONFIG_SERVICE_TIMELINE_LOG_LEVEL);
 
@@ -267,7 +264,7 @@ static void prv_timeout_handler(void *context) {
   // we failed to perform action since we timed out.
   const char *msg = i18n_noop("Failed");
   const bool succeeded = false;
-  PBL_LOG_INFO("Timed out waiting for action result");
+  PBL_LOG_WRN("Timed out waiting for action result");
   prv_show_result_window_with_progress(data, TIMELINE_RESOURCE_GENERIC_WARNING, msg, succeeded);
 }
 
@@ -540,7 +537,7 @@ static ActionResultData *prv_invoke_remote_action(ActionMenu *action_menu,
       // To give the iOS app some context (let it do lookups), give it all the
       // info about the notification
 
-      // Copy every attribtue from the notification and add:
+      // Copy every attribute from the notification and add:
       // - Timestamp attribute
       const int num_extra_attributes = 1;
       const int num_attributes = pin->attr_list.num_attributes + num_extra_attributes;

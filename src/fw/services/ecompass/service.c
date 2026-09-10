@@ -5,27 +5,23 @@
 
 #include "applib/accel_service.h"
 #include "applib/compass_service.h"
-#include "util/trig.h"
+#include "pbl/util/trig.h"
 #include "console/prompt.h"
-#include "drivers/mag.h"
+#include <pbl/drivers/mag.h>
 #include "kernel/event_loop.h"
-#include "kernel/pbl_malloc.h"
-#include "pbl/services/battery/battery_monitor.h"
 #include "pbl/services/event_service.h"
 #include "pbl/services/regular_timer.h"
 #include "syscall/syscall_internal.h"
 #include "syscall/syscall.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "kernel/util/sleep.h"
-
-#include "system/rtc_registers.h"
 
 PBL_LOG_MODULE_DEFINE(service_ecompass, CONFIG_SERVICE_ECOMPASS_LOG_LEVEL);
 
 // Duration (in minutes) to run high-frequency sampling during compass calibration.
 // Defaults to 2 minutes, but some platforms (e.g., Asterix) require longer.
-#ifdef CONFIG_BOARD_FAMILY_ASTERIX
+#ifdef CONFIG_BOARD_ASTERIX
 #define ECOMPASS_CALIBRATION_FAST_MINUTES 6
 #else
 #define ECOMPASS_CALIBRATION_FAST_MINUTES 2
@@ -113,7 +109,7 @@ static int32_t prv_correct_for_roll_and_pitch(AccelRawData *accel_data,
 
   int32_t mx_rot, my_rot;
 
-  // per freescale AN4249, roll is unstable close to verticle but pitch is ok
+  // per freescale AN4249, roll is unstable close to vertical but pitch is ok
   int32_t corr = 0;
   if (TRIGANGLE_TO_DEG(pitch) > 82) {
     pitch = TRIG_MAX_ANGLE / 4;

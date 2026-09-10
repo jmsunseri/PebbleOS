@@ -5,27 +5,17 @@
 
 #include "flash_region/filesystem_regions.h"
 #include "kernel/events.h"
-#include "kernel/util/sleep.h"
-#include "process_management/worker_manager.h"
 #include "pbl/services/comm_session/protocol.h"
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/firmware_update.h"
-#include "pbl/services/i18n/i18n.h"
 #include "pbl/services/put_bytes/put_bytes.h"
 #include "pbl/services/system_task.h"
-#include "pbl/services/runlevel.h"
-#include "system/bootbits.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "system/reboot_reason.h"
 #include "system/reset.h"
-#include "system/version.h"
-#include "util/attributes.h"
-#include "util/net.h"
+#include "pbl/util/attributes.h"
 
-#include "FreeRTOS.h"
-
-#include <string.h>
 #include <stdbool.h>
 #include <inttypes.h>
 
@@ -86,7 +76,7 @@ static void prv_handle_firmware_status_request(CommSession *session) {
     fw_status_resp.resource_crc = status.crc_of_bytes;
   }
 
-  PBL_LOG_INFO("FW Status Resp: res %"PRIu32" : 0x%x fw %"PRIu32" : 0x%x",
+  PBL_LOG_DBG("FW Status Resp: res %"PRIu32" : 0x%x fw %"PRIu32" : 0x%x",
           fw_status_resp.resource_bytes_written, (int)fw_status_resp.resource_crc,
           fw_status_resp.firmware_bytes_written, (int)fw_status_resp.firmware_crc);
 
@@ -121,8 +111,8 @@ void sys_msg_protocol_msg_callback(CommSession *session, const uint8_t* data, si
       SysMsgSmoothFirmwareStartPayload *payload = (SysMsgSmoothFirmwareStartPayload *)data;
       bytes_transferred = payload->bytes_already_transferred;
       total_size = bytes_transferred + payload->bytes_to_transfer;
-      PBL_LOG_INFO("Starting FW update, %"PRIu32" of %"PRIu32" bytes already "
-              "transferred", bytes_transferred, total_size);
+      PBL_LOG_INFO("Starting FW update, %"PRIu32" of %"PRIu32" bytes already transferred",
+                   bytes_transferred, total_size);
     }
 
     PebbleEvent e = {

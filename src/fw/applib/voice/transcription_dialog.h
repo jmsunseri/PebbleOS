@@ -6,7 +6,6 @@
 #include "applib/app_timer.h"
 #include "applib/ui/property_animation.h"
 #include "applib/ui/dialogs/expandable_dialog.h"
-#include "applib/ui/window_stack.h"
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -69,7 +68,7 @@ void transcription_dialog_update_text(TranscriptionDialog *transcription_dialog,
 //! being displayed is what they intended.
 //! @param transcription_dialog Pointer to the \ref TranscriptionDialog to set
 //! @param callback The \ref TranscriptionConfirmationCallback to call if the user confirms text
-//! @param callback_context The \ref callback_context to pass to the confirmation handler
+//! @param callback_context The @c callback_context to pass to the confirmation handler
 //! @note If the callback_context is NULL, then the \ref TranscriptionDialog will be passed
 //!     the callback handler.
 void transcription_dialog_set_callback(TranscriptionDialog *transcription_dialog,

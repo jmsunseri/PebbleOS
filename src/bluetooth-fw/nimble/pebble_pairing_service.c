@@ -8,7 +8,7 @@
 #include <host/ble_store.h>
 #include <host/ble_uuid.h>
 #include <os/os_mbuf.h>
-#include <system/logging.h>
+#include <pbl/logging/logging.h>
 #include <system/passert.h>
 
 #include "nimble_type_conversions.h"
@@ -105,7 +105,7 @@ static int prv_access_trigger_pairing(uint16_t conn_handle, uint16_t attr_handle
       return rc;
     }
 
-    PBL_LOG_INFO("Trigger pairing flags 0x%x", flags);
+    PBL_LOG_DBG("Trigger pairing flags 0x%x", flags);
 
     if ((((flags & TRIGGER_PAIRING_NO_SEC_REQ) == 0U) && !desc.sec_state.encrypted) ||
         ((flags & TRIGGER_PAIRING_FORCE_SEC_REQ) != 0U)) {

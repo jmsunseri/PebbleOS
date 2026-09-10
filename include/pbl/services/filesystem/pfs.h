@@ -8,7 +8,7 @@
 
 #include "kernel/pebble_tasks.h"
 #include "system/status_codes.h"
-#include "util/list.h"
+#include "pbl/util/list.h"
 
 //! Exported APIs for the Pebble File System (PFS)
 //!
@@ -76,7 +76,7 @@ typedef struct {
 //!    committed until the pfs_close is called. Until this time, pfs_open of the
 //!    'name' will return a hdl to the original file. This way there is always a
 //!    valid version of the file which can be read & the caller can copy parts
-//!    of the orginal file in hunks rather than allocating a lot of RAM.
+//!    of the original file in hunks rather than allocating a lot of RAM.
 //!
 //!   OP_FLAG_SKIP_HDR_CRC_CHECK - For files which are not accessed frequently,
 //!    it is a good idea to sanity check the on-flash header CRCs to make sure
@@ -201,8 +201,7 @@ extern uint32_t pfs_crc_calculate_file(int fd, uint32_t offset, uint32_t num_byt
 extern PFSFileListEntry *pfs_create_file_list(PFSFilenameTestCallback callback);
 
 //! Delete a directory list returned by pfs_list_files
-//! @param callback - callback to be called for on filename
-//! @return - pointer to head node of linked list of names, or NULL if no names match
+//! @param list - pointer to head node of linked list of names
 extern void pfs_delete_file_list(PFSFileListEntry *list);
 
 //! Run each filename in the filesystem through the filter callback and delete all files that match

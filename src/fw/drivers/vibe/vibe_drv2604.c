@@ -1,17 +1,13 @@
 /* SPDX-FileCopyrightText: 2025 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/vibe.h"
+#include <pbl/drivers/vibe.h>
 
 #include "board/board.h"
 #include "console/prompt.h"
-#include "drivers/gpio.h"
-#include "drivers/i2c.h"
-#include "drivers/pmic.h"
-#include "drivers/pwm.h"
-#include "system/logging.h"
-#include "system/passert.h"
-#include "util/math.h"
+#include <pbl/drivers/gpio.h>
+#include <pbl/drivers/i2c.h>
+#include <pbl/logging/logging.h>
 
 #include <string.h>
 
@@ -70,10 +66,9 @@ void vibe_init(void) {
   gpio_output_set(&BOARD_CONFIG_VIBE.ctl, true);
   uint8_t rv;
   bool found = prv_read_register(DRV2604_STATUS, &rv);
-  if (found) {
-    PBL_LOG_INFO("Found DRV2604 with STATUS register %02x", rv);
-  } else {
+  if (!found) {
     PBL_LOG_ERR("Failed to read the STATUS register");
+    return;
   }
   
   /* calibration table maybe should live in the board file? */

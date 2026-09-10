@@ -3,11 +3,11 @@
 
 #include "pbl/services/notifications/ancs/ancs_filtering.h"
 
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "kernel/pbl_malloc.h"
 #include "pbl/services/notifications/alerts_preferences.h"
 #include "pbl/services/timeline/attributes_actions.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "util/pstring.h"
 
 #include <string.h>
@@ -185,16 +185,16 @@ void ancs_filtering_record_app(iOSNotifPrefs **notif_prefs,
   // stored.
 
   iOSNotifPrefs *app_notif_prefs = *notif_prefs;
-  const int num_existing_attribtues = app_notif_prefs ? app_notif_prefs->attr_list.num_attributes :
+  const int num_existing_attributes = app_notif_prefs ? app_notif_prefs->attr_list.num_attributes :
                                                         0;
 
   AttributeList new_attr_list;
-  attribute_list_init_list(num_existing_attribtues, &new_attr_list);
+  attribute_list_init_list(num_existing_attributes, &new_attr_list);
   bool list_dirty = false;
 
   // Copy over all the existing attributes to our new list
   if (app_notif_prefs) {
-    for (int i = 0; i < num_existing_attribtues; i++) {
+    for (int i = 0; i < num_existing_attributes; i++) {
       new_attr_list.attributes[i] = app_notif_prefs->attr_list.attributes[i];
     }
   }

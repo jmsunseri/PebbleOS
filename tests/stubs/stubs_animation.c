@@ -11,7 +11,7 @@
 #include "applib/ui/animation_private.h"
 #include "applib/ui/property_animation.h"
 #include "applib/ui/property_animation_private.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 
 Animation *WEAK animation_create(void) {
   Animation *animation = malloc(sizeof(AnimationPrivate));
@@ -117,6 +117,11 @@ uint32_t WEAK animation_get_duration(Animation *animation, bool include_delay, b
 }
 
 bool WEAK animation_set_curve(Animation *animation, AnimationCurve curve) { return true; }
+
+bool WEAK animation_set_custom_curve(Animation *animation,
+                                     AnimationCurveFunction curve_function) {
+  return true;
+}
 
 bool WEAK animation_set_custom_interpolation(Animation *animation_h,
                                              InterpolateInt64Function interpolate_function) {

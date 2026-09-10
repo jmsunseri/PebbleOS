@@ -1,11 +1,11 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/task_watchdog.h"
+#include <pbl/drivers/task_watchdog.h>
 #include "kernel_heap.h"
-#include "mcu/interrupts.h"
+#include "pbl/mcu/interrupts.h"
 #include "pbl/services/analytics/analytics.h"
-#include "util/heap.h"
+#include "pbl/util/heap.h"
 
 #include <cmsis_core.h>
 

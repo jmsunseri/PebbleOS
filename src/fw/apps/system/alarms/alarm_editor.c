@@ -6,21 +6,17 @@
 #include "applib/pbl_std/timelocal.h"
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/day_picker.h"
-#include "applib/ui/number_window.h"
-#include "applib/ui/simple_menu_layer.h"
 #include "applib/ui/time_selection_window.h"
 #include "applib/ui/ui.h"
 #include "apps/system/settings/option_menu.h"
 #include "kernel/pbl_malloc.h"
 #include "popups/health_tracking_ui.h"
-#include "resource/resource_ids.auto.h"
 #include "pbl/services/i18n/i18n.h"
 #include "pbl/services/activity/activity.h"
 #include "pbl/services/alarms/alarm.h"
 #include "shell/prefs.h"
-#include "system/logging.h"
 #include "system/passert.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #include <string.h>
 
@@ -187,7 +183,7 @@ static void prv_time_picker_complete(TimeSelectionWindowData *time_picker_window
 
   if (data->creating_alarm) {
     DayPickerResult initial = {
-      .kind = DayPickerKindEveryday,
+      .kind = DayPickerKindJustOnce,
     };
     memset(initial.custom_days, 0, sizeof(initial.custom_days));
     DayPickerConfig config = {

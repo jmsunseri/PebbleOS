@@ -7,15 +7,13 @@
 #include "pbl/services/protobuf_log/protobuf_log_private.h"
 #include "pbl/services/protobuf_log/protobuf_log_activity_sessions.h"
 
-#include "pb.h"
-#include "pb_encode.h"
 #include "pb_decode.h"
 
 #include "nanopb/payload.pb.h"
 #include "nanopb/measurements.pb.h"
 #include "system/passert.h"
 
-#include <util/uuid.h>
+#include <pbl/util/uuid.h>
 
 // -----------------------------------------------------------------------------------------
 // Callback used to decode uuid

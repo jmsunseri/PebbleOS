@@ -1,20 +1,16 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "kernel/logging_private.h"
+#include "logging/logging_private.h"
 #include "system/die.h"
 #include "system/reboot_reason.h"
-#include "system/reset.h"
-#include "util/attributes.h"
 #include "util/bitset.h"
-#include "util/size.h"
-#include "util/string.h"
+#include "pbl/util/size.h"
+#include "pbl/util/string.h"
 
 #include <cmsis_core.h>
 
 #include <inttypes.h>
-#include <stdarg.h>
-#include <stdio.h>
 
 #include "kernel/pebble_tasks.h"
 
@@ -133,7 +129,8 @@ void fault_handler_dump(char buffer[80], unsigned int *stacked_args) {
 
 static void hard_fault_handler_c(unsigned int* hardfault_args) {
   // Prefer LR (PC is often madness on a hardfault). Fall back through PC,
-  // BFAR, MMFAR so Memfault always has a non-zero address to fingerprint on.
+  // BFAR, MMFAR so crash reports always have a non-zero address to
+  // fingerprint on.
   unsigned int stacked_lr = ((unsigned long) hardfault_args[5]);
   if (stacked_lr == 0) {
     stacked_lr = ((unsigned long) hardfault_args[6]);

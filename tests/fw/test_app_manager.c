@@ -9,15 +9,17 @@
 #include "applib/graphics/framebuffer.h"
 #include "applib/ui/window_stack.h"
 #include "applib/ui/window_stack_private.h"
-#include "drivers/mpu.h"
+#include <pbl/drivers/mpu.h>
 #include "kernel/util/segment.h"
 #include "popups/crashed_ui.h"
 #include "process_management/app_install_manager.h"
 #include "process_management/app_manager.h"
 #include "process_management/app_run_state.h"
 #include "process_management/process_manager.h"
+#include "pbl/services/vibe_pattern.h"
 #include "resource/resource_ids.auto.h"
-#include "util/heap.h"
+#include "pbl/services/blob_db/app_db.h"
+#include "pbl/util/heap.h"
 
 // Fakes
 #include "fake_new_timer.h"
@@ -43,7 +45,6 @@
 #include "stubs_mutex.h"
 #include "stubs_passert.h"
 #include "stubs_persist.h"
-#include "stubs_powermode_service.h"
 #include "stubs_print.h"
 #include "stubs_prompt.h"
 #include "stubs_rand_ptr.h"
@@ -51,7 +52,7 @@
 #include "stubs_serial.h"
 #include "stubs_simple_dialog.h"
 #include "stubs_syscall_internal.h"
-#include "stubs_task.h"
+#include "stubs_thread.h"
 #include "stubs_tick.h"
 #include "stubs_timeline_peek.h"
 #include "stubs_worker_manager.h"
@@ -201,6 +202,14 @@ bool app_cache_entry_exists(AppInstallId app_id) {
   return true;
 }
 
+status_t app_cache_remove_entry(AppInstallId app_id) {
+  return S_SUCCESS;
+}
+
+status_t app_db_get_app_entry_for_install_id(AppInstallId app_id, AppDBEntry *entry) {
+  return E_DOES_NOT_EXIST;
+}
+
 const PebbleProcessMd* app_fetch_ui_get_app_info(void) {
   return NULL;
 }
@@ -241,12 +250,9 @@ void light_reset_user_controlled(void) {
 void light_set_system_color(void) {
 }
 
-void mpu_set_task_configurable_regions(MemoryRegion_t *task_params, const MpuRegion **region_ptrs) {
-}
-
 void task_init(void) {}
 
-void pebble_task_register(PebbleTask task, TaskHandle_t task_handle) {
+void pebble_task_register(PebbleTask task, struct pbl_thread *thread) {
 }
 
 void pebble_task_unregister(PebbleTask task) {
@@ -256,8 +262,8 @@ const char* pebble_task_get_name(PebbleTask task) {
   return "?";
 }
 
-void pebble_task_create(PebbleTask pebble_task, TaskParameters_t *task_params,
-                        TaskHandle_t *handle) {
+struct pbl_thread *pebble_task_create(PebbleTask pebble_task, struct pbl_thread_attr *attr) {
+  return NULL;
 }
 
 void * process_loader_load(const PebbleProcessMd *app_md, PebbleTask task,
@@ -297,7 +303,7 @@ void health_tracking_ui_register_app_launch(AppInstallId app_id) {
 void sys_vibe_history_stop_collecting(void) {
 }
 
-void sys_vibe_pattern_clear(void) {
+void vibe_pattern_clear_for_owner(VibePatternOwner owner) {
 }
 
 void speaker_service_stop_for_task(PebbleTask task) {
@@ -307,34 +313,28 @@ Heap *worker_state_get_heap(void) {
   return NULL;
 }
 
-QueueHandle_t xQueueGenericCreate( unsigned portBASE_TYPE uxQueueLength, unsigned portBASE_TYPE uxItemSize, unsigned char ucQueueType ) {
-  static intptr_t counter = 0;
-  // Return unique IDs for all the created queues
-  return (void*) ++counter;
+void pbl_msgq_init(struct pbl_msgq *q, void *buf, size_t msg_size, uint32_t max_msgs) {
 }
-signed portBASE_TYPE xQueueGenericSend( QueueHandle_t xQueue,
-    const void * const pvItemToQueue, TickType_t xTicksToWait, portBASE_TYPE xCopyPosition ) {
-  if (xQueue == app_manager_get_task_context()->to_process_event_queue) {
-    s_last_to_app_event = *(PebbleEvent*) pvItemToQueue;
+
+int pbl_msgq_put(struct pbl_msgq *q, const void *msg, pbl_timeout_t timeout) {
+  if (q == app_manager_get_task_context()->to_process_event_queue) {
+    s_last_to_app_event = *(PebbleEvent*) msg;
   }
-  return pdTRUE;
-}
-
-BaseType_t event_queue_cleanup_and_reset(QueueHandle_t queue) {
-  return pdPASS;
-}
-
-signed portBASE_TYPE xQueueGenericReceive( QueueHandle_t pxQueue, void * const pvBuffer, TickType_t xTicksToWait, portBASE_TYPE xJustPeeking ) {
-  return pdTRUE;
-}
-BaseType_t xQueueGenericReset( QueueHandle_t xQueue, BaseType_t xNewQueue ) {
-  return pdTRUE;
-}
-UBaseType_t uxQueueMessagesWaiting( const QueueHandle_t xQueue ) {
   return 0;
 }
 
-void vQueueDelete( QueueHandle_t xQueue ) {
+void event_queue_cleanup_and_reset(struct pbl_msgq *queue) {
+}
+
+int pbl_msgq_get(struct pbl_msgq *q, void *msg, pbl_timeout_t timeout) {
+  return 0;
+}
+
+void pbl_msgq_purge(struct pbl_msgq *q) {
+}
+
+uint32_t pbl_msgq_num_used(const struct pbl_msgq *q) {
+  return 0;
 }
 
 void watchface_set_default_install_id(AppInstallId id) {
@@ -350,8 +350,8 @@ const char *app_install_get_custom_app_name(AppInstallId install_id) {
 void status_bar_push_text(const char *text) {
 }
 
-const CompositorTransition* shell_get_open_compositor_animation(AppInstallId current_app_id,
-                                                                AppInstallId next_app_id) {
+const CompositorTransition* shell_get_open_compositor_animation(
+    AppInstallId current_app_id, AppInstallId next_app_id, const LaunchConfigCommon *config) {
   return NULL;
 }
 

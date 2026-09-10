@@ -2,6 +2,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "scroll_layer.h"
+#include "scroll_layer_private.h"
 
 #include "applib/applib_malloc.auto.h"
 #include "applib/graphics/gtypes.h"
@@ -10,13 +11,22 @@
 #include "applib/ui/shadows.h"
 #include "applib/ui/window.h"
 #include "process_management/app_manager.h"
-#include "system/logging.h"
 #include "system/passert.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 
-#include "animation_timing.h"
+#ifdef CONFIG_TOUCH
+#include "applib/ui/recognizer/touch_nav.h"
+#include "applib/ui/recognizer/recognizer_manager.h"
+#include "applib/ui/recognizer/pan.h"
+#include "applib/ui/recognizer/swipe.h"
+#include "kernel/pebble_tasks.h"
+#include "pbl/drivers/rtc.h"
 
-#include <string.h>
+// Provided by the owning task; forward-declared (as in menu_layer.c) to avoid pulling kernel
+// app-state / modal-manager headers into this applib translation unit.
+struct TouchNavState *app_state_get_touch_nav_state(void);
+struct TouchNavState *modal_manager_get_touch_nav_state(void);
+#endif
 
 T_STATIC bool prv_scroll_layer_is_paging_enabled(ScrollLayer *scroll_layer) {
   PBL_ASSERTN(scroll_layer);
@@ -87,6 +97,254 @@ static void scroll_layer_property_changed_proc(Layer *layer) {
   layer_set_frame(&scroll_layer->content_sublayer, &internal_rect);
 }
 
+#ifdef CONFIG_TOUCH
+// ---------------------------------------------------------------------------------------------
+// Tier-1 touch navigation
+//
+// A ScrollLayer registers itself as a Tier-1 touch widget in scroll_layer_init(). Like MenuLayer,
+// the recognizers and gesture state are NOT owned per-widget: the unified widget (tap, pan, swipe)
+// set, owned by TouchNavState, drives whichever migrated widget the finger lands on through a
+// per-node apply vtable. A ScrollLayer supplies that vtable (s_scroll_touch_nav_ops) at
+// registration; the apply functions below stay the public per-scroll gesture surface (and the
+// unit-test entry points). A ScrollLayer is a pure scroll container (no selection model): a vertical
+// pan drags the content 1:1 and a horizontal swipe navigates (right = BACK, left = SELECT); it has
+// no tap action (tap op is NULL, so a tap on it is dropped, never a bridge SELECT). A ScrollLayer
+// embedded in a composite that drives its own scrolling (e.g. MenuLayer) deregisters via
+// scroll_layer_touch_nav_deregister() so the same layer never has two gesture drivers.
+
+_Static_assert(sizeof(((ScrollLayer *)0)->touch_nav_node) == sizeof(TouchNavWidgetNode),
+               "ScrollLayer touch_nav_node must match TouchNavWidgetNode layout");
+
+static bool prv_is_app_task(void) {
+  return pebble_task_get_current() == PebbleTask_App;
+}
+
+static TouchNavState *prv_task_touch_nav_state(void) {
+  return prv_is_app_task() ? app_state_get_touch_nav_state() : modal_manager_get_touch_nav_state();
+}
+
+// Test seam (declared in scroll_layer_private.h under CONFIG_TOUCH). The unified widget set holds no
+// per-task singleton to reset; the touch-nav state is owned by TouchNavState, so this is a no-op
+// kept for source compatibility with tests that call it in their setup.
+void scroll_layer_touch_nav_reset_all(void) {
+}
+
+bool scroll_layer_touch_is_gesture_target(const ScrollLayer *scroll_layer) {
+  const TouchNavState *state = prv_task_touch_nav_state();
+  return state && state->latched_target && state->latched_target->widget == scroll_layer;
+}
+
+// Coarse clamp: [min(frame_h - content_h, 0), 0]. With content shorter than the viewport the lower
+// bound collapses to 0 (via the min()), so a short page cannot be dragged off its top.
+static int16_t prv_scroll_touch_clamp_offset_y(ScrollLayer *scroll_layer, int16_t y) {
+  const int16_t frame_h = scroll_layer->layer.frame.size.h;
+  const int16_t content_h = scroll_layer_get_content_size(scroll_layer).h;
+  const int16_t min_y = MIN((int16_t)(frame_h - content_h), (int16_t)0);
+  return CLIP(y, min_y, (int16_t)0);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Gesture handlers (also the unit-test entry surface)
+
+void scroll_layer_touch_handle_pan_update(ScrollLayer *scroll_layer, GPoint base,
+                                          GPoint delta_since_start) {
+  const int32_t raw_y = (int32_t)base.y + delta_since_start.y;
+  const int16_t frame_h = scroll_layer->layer.frame.size.h;
+  const int16_t content_h = scroll_layer_get_content_size(scroll_layer).h;
+  // Paging layers keep the hard clamp (rubber-banding would fight page alignment); so does
+  // content that fits the frame (nothing to scroll, nothing to bounce).
+  if (scroll_layer_get_paging(scroll_layer) || content_h <= frame_h) {
+    const int16_t clamped_y = prv_scroll_touch_clamp_offset_y(
+        scroll_layer, (int16_t)CLIP(raw_y, INT16_MIN, INT16_MAX));
+    scroll_layer_set_content_offset(scroll_layer, GPoint(0, clamped_y), false);
+    return;
+  }
+  const int16_t min_y = MIN((int16_t)(frame_h - content_h), (int16_t)0);
+  const int16_t new_y = scroll_layer_touch_overscroll_damp(raw_y, min_y, 0, frame_h);
+  scroll_layer_touch_set_content_offset_overscrolled(scroll_layer, new_y);
+}
+
+static void prv_scroll_touch_fling_stopped(Animation *animation, bool finished, void *context) {
+  (void)animation;
+  (void)finished;
+  scroll_layer_touch_fling_cleanup((ScrollLayer *)context);
+}
+
+void scroll_layer_touch_handle_snap(ScrollLayer *scroll_layer, GPoint base, GPoint final_delta,
+                                    GPoint velocity) {
+  const int16_t released_y = prv_scroll_touch_clamp_offset_y(scroll_layer,
+                                                             base.y + final_delta.y);
+  const int16_t current_y = scroll_layer_get_content_offset(scroll_layer).y;
+  if (current_y != prv_scroll_touch_clamp_offset_y(scroll_layer, current_y)) {
+    // Rubber-banded past an edge: glide back to it regardless of velocity (a coast from out of
+    // bounds would be clipped to the edge on its first frame by the standard animation setter).
+    scroll_layer_touch_overscroll_spring_back(scroll_layer, released_y,
+                                              prv_scroll_touch_fling_stopped, scroll_layer);
+    return;
+  }
+  // Coast: project where the finger's velocity carries the content and decelerate there. The
+  // coast starts from the current (last throttled) offset, so the unthrottled residual is
+  // absorbed into the animation instead of jumping instantly at liftoff. Paging keeps its snap
+  // semantics (a coast would break page alignment).
+  const int32_t v = CLIP((int32_t)velocity.y, -TOUCH_FLING_MAX_VELOCITY_PX_S,
+                         TOUCH_FLING_MAX_VELOCITY_PX_S);
+  if (ABS(v) >= TOUCH_FLING_MIN_VELOCITY_PX_S && !scroll_layer_get_paging(scroll_layer)) {
+    const int32_t projected_y = released_y + (v * TOUCH_FLING_TAU_MS) / 1000;
+    const int16_t target_y = prv_scroll_touch_clamp_offset_y(
+        scroll_layer, (int16_t)CLIP(projected_y, INT16_MIN, INT16_MAX));
+    if (scroll_layer_touch_fling_start(scroll_layer, target_y, (int16_t)v,
+                                       prv_scroll_touch_fling_stopped, scroll_layer)) {
+      return;
+    }
+  }
+  // Slow liftoff (or a coast too short to schedule): settle the final offset, as before.
+  scroll_layer_set_content_offset(scroll_layer, GPoint(0, released_y), false);
+}
+
+void scroll_layer_touch_handle_swipe(ScrollLayer *scroll_layer, SwipeDirection direction) {
+  (void)scroll_layer;
+  // Horizontal swipe navigation, mirroring the Tier-2 bridge and MenuLayer: right = BACK (pop the
+  // top window when it has no back handler), left = SELECT. Guarded against a mid-transition drop.
+  const TouchNavState *state = prv_task_touch_nav_state();
+  if (!state || !state->ops) {
+    return;
+  }
+  const TouchNavOps *ops = state->ops;
+  if (ops->is_animating && ops->is_animating(ops->ctx)) {
+    return;
+  }
+  switch (direction) {
+    case SwipeDirection_Right:
+      if (!(ops->top_overrides_back && ops->top_overrides_back(ops->ctx))) {
+        if (ops->pop_top) {
+          ops->pop_top(ops->ctx);
+        }
+      } else if (ops->emit_button) {
+        ops->emit_button(ops->ctx, BUTTON_ID_BACK);
+      }
+      break;
+    case SwipeDirection_Left:
+      if (ops->emit_button) {
+        ops->emit_button(ops->ctx, BUTTON_ID_SELECT);
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Unified widget-set ops
+
+// Thin void*->ScrollLayer* wrappers over the public apply functions. The unified widget set (owned
+// by TouchNavState) drives the scroll layer through these; direct assignment of the apply functions
+// would not compile because their first parameter is ScrollLayer*, not void*.
+
+void scroll_layer_touch_handle_touchdown(ScrollLayer *scroll_layer) {
+  // Finger down: stop any running scroll animation immediately so a coasting fling (or a settle)
+  // is caught at touchdown, not at the pan threshold.
+  Animation *anim = property_animation_get_animation(scroll_layer->animation);
+  if (anim && animation_is_scheduled(anim)) {
+    animation_unschedule(anim);
+  }
+  // A fling caught before its first frame never ran its stopped handler; restore explicitly.
+  scroll_layer_touch_fling_cleanup(scroll_layer);
+  // A catch mid-spring-back must not freeze the content out of bounds (a tap never settles it):
+  // restart the glide; a pan taking over unschedules it with the base latched.
+  const int16_t y = scroll_layer_get_content_offset(scroll_layer).y;
+  const int16_t clamped_y = prv_scroll_touch_clamp_offset_y(scroll_layer, y);
+  if (y != clamped_y) {
+    scroll_layer_touch_overscroll_spring_back(scroll_layer, clamped_y,
+                                              prv_scroll_touch_fling_stopped, scroll_layer);
+  }
+}
+
+static void prv_scroll_ops_touchdown(void *w) {
+  scroll_layer_touch_handle_touchdown((ScrollLayer *)w);
+}
+
+static void prv_scroll_ops_pan_started(void *w) {
+  // The touchdown op already stopped any running animation; this covers an animation that started
+  // between the Touchdown and the pan threshold (e.g. a button-driven scroll) so the finger takes
+  // over cleanly. The base offset is latched by the core via get_base_offset next.
+  scroll_layer_touch_handle_touchdown((ScrollLayer *)w);
+}
+
+static GPointReturn prv_scroll_ops_get_base_offset(void *w) {
+  return scroll_layer_get_content_offset((ScrollLayer *)w);
+}
+
+static void prv_scroll_ops_pan_update(void *w, GPoint base, GPoint delta) {
+  scroll_layer_touch_handle_pan_update((ScrollLayer *)w, base, delta);
+}
+
+static void prv_scroll_ops_pan_snap(void *w, GPoint base, GPoint final_delta, GPoint velocity) {
+  scroll_layer_touch_handle_snap((ScrollLayer *)w, base, final_delta, velocity);
+}
+
+static void prv_scroll_ops_pan_cancel(void *w) {
+  // The content is already settled from the last Updated; only a rubber-banded offset needs
+  // restoring -- instantly, since a cancel is a handover that must not leave an animation running.
+  ScrollLayer *scroll_layer = w;
+  const int16_t y = scroll_layer_get_content_offset(scroll_layer).y;
+  const int16_t clamped_y = prv_scroll_touch_clamp_offset_y(scroll_layer, y);
+  if (y != clamped_y) {
+    scroll_layer_set_content_offset(scroll_layer, GPoint(0, clamped_y), false);
+  }
+}
+
+static void prv_scroll_ops_swipe(void *w, SwipeDirection dir) {
+  scroll_layer_touch_handle_swipe((ScrollLayer *)w, dir);
+}
+
+// can_start is NULL: a ScrollLayer's content is always valid, so a pan may always start. tap is
+// NULL: a ScrollLayer has no tap action, so a tap on it is dropped (never a bridge SELECT).
+static const TouchNavWidgetOps s_scroll_touch_nav_ops = {
+  .can_start = NULL,
+  .touchdown = prv_scroll_ops_touchdown,
+  .pan_started = prv_scroll_ops_pan_started,
+  .get_base_offset = prv_scroll_ops_get_base_offset,
+  .pan_update = prv_scroll_ops_pan_update,
+  .pan_snap = prv_scroll_ops_pan_snap,
+  .pan_cancel = prv_scroll_ops_pan_cancel,
+  .tap = NULL,
+  .swipe = prv_scroll_ops_swipe,
+};
+
+static void prv_scroll_touch_nav_register(ScrollLayer *scroll_layer) {
+  TouchNavState *state = prv_task_touch_nav_state();
+  if (!state || !state->manager) {
+    return;
+  }
+
+  // Register the scroll layer as a migrated Tier-1 widget: the unified widget set drives it through
+  // s_scroll_touch_nav_ops. The registry add dedupes by address and re-applies the ops/layer, so a
+  // repeated init on the same scroll layer (no intervening deinit) keeps routing to and driving it.
+  touch_nav_registry_add(state, TouchNavWidgetType_Scroll,
+                         (TouchNavWidgetNode *)&scroll_layer->touch_nav_node, &scroll_layer->layer,
+                         &s_scroll_touch_nav_ops, scroll_layer);
+}
+
+void scroll_layer_touch_nav_deregister(ScrollLayer *scroll_layer) {
+  TouchNavState *state = prv_task_touch_nav_state();
+  if (!state) {
+    return;
+  }
+  // If this scroll layer is the live gesture target and is about to go away under a live window,
+  // cancel the gesture with NO client callbacks so a settle cannot reach freed state.
+  // touch_nav_registry_remove clears the latched target BEFORE we cancel (its UAF hook), so the
+  // resulting Cancelled dispatch finds no target and re-enters nothing.
+  const bool was_target = scroll_layer_touch_is_gesture_target(scroll_layer);
+  // Idempotent: removing a node that is not in the registry (double deinit, or a never-registered
+  // layer) is a safe no-op.
+  touch_nav_registry_remove(state, TouchNavWidgetType_Scroll,
+                            (TouchNavWidgetNode *)&scroll_layer->touch_nav_node);
+  if (was_target && state->manager) {
+    recognizer_manager_cancel_and_reset(state->manager);
+  }
+}
+#endif  // CONFIG_TOUCH
+
 void scroll_layer_init(ScrollLayer *scroll_layer, const GRect *frame) {
   *scroll_layer = (ScrollLayer){};
 
@@ -98,6 +356,10 @@ void scroll_layer_init(ScrollLayer *scroll_layer, const GRect *frame) {
   layer_add_child(&scroll_layer->layer, &scroll_layer->content_sublayer);
 
   prv_setup_shadow_layer(scroll_layer);
+
+#ifdef CONFIG_TOUCH
+  prv_scroll_touch_nav_register(scroll_layer);
+#endif
 }
 
 ScrollLayer* scroll_layer_create(GRect frame) {
@@ -113,6 +375,11 @@ bool scroll_layer_is_instance(const Layer *layer) {
 }
 
 void scroll_layer_deinit(ScrollLayer *scroll_layer) {
+#ifdef CONFIG_TOUCH
+  // Deregister from the Tier-1 touch registry first so a gesture in flight on this widget is
+  // cancelled with no client callbacks before its state is torn down (double-deinit safe).
+  scroll_layer_touch_nav_deregister(scroll_layer);
+#endif
   animation_destroy(property_animation_get_animation(scroll_layer->animation));
   content_indicator_destroy_for_scroll_layer(scroll_layer);
   layer_deinit(&scroll_layer->layer);
@@ -183,6 +450,16 @@ T_STATIC void prv_scroll_layer_set_content_offset_internal(
   }
 }
 
+static const PropertyAnimationImplementation s_content_offset_animation_impl = {
+  .base = {
+    .update = (AnimationUpdateImplementation) property_animation_update_gpoint,
+  },
+  .accessors = {
+    .setter = { .grect = (const GRectSetter) (void *) prv_scroll_layer_set_content_offset_internal, },
+    .getter = { .grect = (const GRectGetter) (void *) scroll_layer_get_content_offset, },
+  },
+};
+
 void scroll_layer_set_content_offset(ScrollLayer *scroll_layer, GPoint offset, bool animated) {
   // Note: animation_is_scheduled() returns false and property_animation_destroy does nothing
   // if the argument is NULL
@@ -195,24 +472,15 @@ void scroll_layer_set_content_offset(ScrollLayer *scroll_layer, GPoint offset, b
     }
   }
   if (animated) {
-    static const PropertyAnimationImplementation implementation = {
-      .base = {
-        .update = (AnimationUpdateImplementation) property_animation_update_gpoint,
-      },
-      .accessors = {
-        .setter = { .grect = (const GRectSetter) (void *) prv_scroll_layer_set_content_offset_internal, },
-        .getter = { .grect = (const GRectGetter) (void *) scroll_layer_get_content_offset, },
-      },
-    };
     if (animation) {
-      property_animation_init(scroll_layer->animation, &implementation, scroll_layer, NULL,
-                              &offset);
+      property_animation_init(scroll_layer->animation, &s_content_offset_animation_impl,
+                              scroll_layer, NULL, &offset);
       if (was_running && !scroll_layer_get_paging(scroll_layer)) {
         animation_set_curve(animation, AnimationCurveEaseOut);
       }
     } else {
-      scroll_layer->animation = property_animation_create(&implementation, scroll_layer, NULL,
-                                                          &offset);
+      scroll_layer->animation = property_animation_create(&s_content_offset_animation_impl,
+                                                          scroll_layer, NULL, &offset);
       animation = property_animation_get_animation(scroll_layer->animation);
       if (scroll_layer_get_paging(scroll_layer)) {
         animation_set_custom_interpolation(animation, interpolate_moook);
@@ -225,6 +493,159 @@ void scroll_layer_set_content_offset(ScrollLayer *scroll_layer, GPoint offset, b
     prv_scroll_layer_set_content_offset_internal(scroll_layer, offset);
   }
 }
+
+#ifdef CONFIG_TOUCH
+//! Apply a touch-overscrolled content offset, bypassing the clamp that
+//! prv_scroll_layer_set_content_offset_internal applies when offset clipping is enabled (the
+//! clamp would swallow the rubber-band excess every frame).
+static void prv_set_content_offset_overscrolled_internal(ScrollLayer *scroll_layer,
+                                                         GPoint offset) {
+  GRect bounds = scroll_layer->content_sublayer.bounds;
+  const GPoint old_offset = bounds.origin;
+  bounds.origin = offset;
+  if (gpoint_equal(&old_offset, &bounds.origin)) {
+    scroll_layer_update_content_indicator(scroll_layer);
+    return;
+  }
+  layer_set_bounds(&scroll_layer->content_sublayer, &bounds);
+  scroll_layer_update_content_indicator(scroll_layer);
+  if (scroll_layer->callbacks.content_offset_changed_handler) {
+    scroll_layer->callbacks.content_offset_changed_handler(scroll_layer,
+                                                           get_callback_context(scroll_layer));
+  }
+}
+
+//! Animation impl for the overscroll spring-back: same shape as
+//! s_content_offset_animation_impl but with the unclamped setter, so intermediate out-of-bounds
+//! frames glide instead of being clipped to the edge on the first frame.
+static const PropertyAnimationImplementation s_overscroll_offset_animation_impl = {
+  .base = {
+    .update = (AnimationUpdateImplementation) property_animation_update_gpoint,
+  },
+  .accessors = {
+    .setter = { .grect =
+        (const GRectSetter) (void *) prv_set_content_offset_overscrolled_internal, },
+    .getter = { .grect = (const GRectGetter) (void *) scroll_layer_get_content_offset, },
+  },
+};
+
+int16_t scroll_layer_touch_overscroll_damp(int32_t raw_y, int16_t min_y, int16_t max_y,
+                                           int16_t frame_h) {
+  int32_t excess;
+  int16_t edge, sign;
+  if (raw_y > max_y) {
+    excess = raw_y - max_y;
+    edge = max_y;
+    sign = 1;
+  } else if (raw_y < min_y) {
+    excess = min_y - raw_y;
+    edge = min_y;
+    sign = -1;
+  } else {
+    return (int16_t)raw_y;
+  }
+  // Asymptotic rubber band: the content follows at half the finger's speed at first and
+  // saturates at ~1/6 of the frame height.
+  const int32_t max_over = MAX(frame_h / 6, 1);
+  const int32_t damped = (excess * max_over) / (excess + (2 * max_over));
+  return (int16_t)(edge + (sign * damped));
+}
+
+void scroll_layer_touch_set_content_offset_overscrolled(ScrollLayer *scroll_layer, int16_t y) {
+  Animation *animation = property_animation_get_animation(scroll_layer->animation);
+  if (animation && animation_is_scheduled(animation)) {
+    animation_unschedule(animation);
+  }
+  prv_set_content_offset_overscrolled_internal(scroll_layer, GPoint(0, y));
+}
+
+void scroll_layer_touch_overscroll_spring_back(ScrollLayer *scroll_layer, int16_t target_y,
+                                               AnimationStoppedHandler stopped,
+                                               void *stopped_context) {
+  const GPoint target = GPoint(0, target_y);
+  Animation *animation = property_animation_get_animation(scroll_layer->animation);
+  if (animation) {
+    if (animation_is_scheduled(animation)) {
+      animation_unschedule(animation);
+    }
+    property_animation_init(scroll_layer->animation, &s_overscroll_offset_animation_impl,
+                            scroll_layer, NULL, (void *)&target);
+  } else {
+    scroll_layer->animation = property_animation_create(&s_overscroll_offset_animation_impl,
+                                                        scroll_layer, NULL, (void *)&target);
+    if (!scroll_layer->animation) {
+      // No animation available: land on the edge instantly rather than staying out of bounds.
+      prv_set_content_offset_overscrolled_internal(scroll_layer, target);
+      return;
+    }
+    animation = property_animation_get_animation(scroll_layer->animation);
+    animation_set_auto_destroy(animation, false);
+  }
+  animation_set_duration(animation, TOUCH_OVERSCROLL_SPRING_BACK_MS);
+  animation_set_curve(animation, AnimationCurveEaseOut);
+  animation_set_handlers(animation, (AnimationHandlers) { .stopped = stopped }, stopped_context);
+  animation_schedule(animation);
+}
+
+// Cubic ease-out in AnimationProgress space: f(t) = 1 - (1 - t)^3. Compared to the stock
+// quadratic EaseOut it brakes harder early and glides out longer, so a fast coast tapers off
+// instead of stopping dead.
+static AnimationProgress prv_fling_ease_out_cubic(AnimationProgress progress) {
+  const int64_t remaining = ANIMATION_NORMALIZED_MAX - progress;
+  return (AnimationProgress)(ANIMATION_NORMALIZED_MAX -
+      (remaining * remaining * remaining) /
+          ((int64_t)ANIMATION_NORMALIZED_MAX * ANIMATION_NORMALIZED_MAX));
+}
+
+bool scroll_layer_touch_fling_start(ScrollLayer *scroll_layer, int16_t target_y,
+                                    int16_t velocity_y, AnimationStoppedHandler stopped,
+                                    void *stopped_context) {
+  const int16_t current_y = scroll_layer_get_content_offset(scroll_layer).y;
+  const int32_t distance = (int32_t)target_y - current_y;
+  if (ABS(distance) < TOUCH_FLING_MIN_DISTANCE_PX || velocity_y == 0) {
+    return false;
+  }
+  const GPoint target = GPoint(0, target_y);
+  Animation *animation = property_animation_get_animation(scroll_layer->animation);
+  if (animation) {
+    if (animation_is_scheduled(animation)) {
+      animation_unschedule(animation);  // fires a previous coast's stopped handler, if any
+    }
+    property_animation_init(scroll_layer->animation, &s_content_offset_animation_impl,
+                            scroll_layer, NULL, (void *)&target);
+  } else {
+    scroll_layer->animation = property_animation_create(&s_content_offset_animation_impl,
+                                                        scroll_layer, NULL, (void *)&target);
+    if (!scroll_layer->animation) {
+      return false;
+    }
+    animation = property_animation_get_animation(scroll_layer->animation);
+    animation_set_auto_destroy(animation, false);
+  }
+  // The cubic ease-out launches at slope 3 (f(t) = 1 - (1 - t)^3), so T = 3000 * |d| / |v| makes
+  // the animated launch velocity equal the finger's liftoff velocity, with a long soft tail. An
+  // edge-truncated distance shortens T proportionally, preserving the launch speed instead of
+  // crawling into the clamp.
+  const int32_t duration_ms = CLIP((3000 * ABS(distance)) / ABS((int32_t)velocity_y),
+                                   (int32_t)TOUCH_FLING_MIN_DURATION_MS,
+                                   (int32_t)TOUCH_FLING_MAX_DURATION_MS);
+  animation_set_duration(animation, (uint32_t)duration_ms);
+  animation_set_custom_curve(animation, prv_fling_ease_out_cubic);
+  animation_set_handlers(animation, (AnimationHandlers) { .stopped = stopped }, stopped_context);
+  animation_schedule(animation);
+  return true;
+}
+
+void scroll_layer_touch_fling_cleanup(ScrollLayer *scroll_layer) {
+  Animation *animation = property_animation_get_animation(scroll_layer->animation);
+  if (!animation || animation_is_scheduled(animation)) {
+    return;
+  }
+  animation_set_duration(animation, ANIMATION_DEFAULT_DURATION_MS);
+  animation_set_curve(animation, AnimationCurveDefault);
+  animation_set_handlers(animation, (AnimationHandlers) { 0 }, NULL);
+}
+#endif
 
 void scroll_layer_set_content_size(ScrollLayer *scroll_layer, GSize size) {
   GRect bounds = scroll_layer->content_sublayer.bounds;

@@ -5,11 +5,9 @@
 
 #include "kernel/pbl_malloc.h"
 
-#include <util/math.h>
-#include <util/sort.h>
+#include <pbl/util/math.h>
+#include <pbl/util/sort.h>
 
-#include <stdlib.h>
-#include <inttypes.h>
 #include <stdbool.h>
 
 // ------------------------------------------------------------------------------------------------

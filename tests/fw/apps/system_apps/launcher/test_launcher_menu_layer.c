@@ -10,7 +10,7 @@
 #include "resource/resource_ids.auto.h"
 #include "pbl/services/app_glances/app_glance_service.h"
 #include "pbl/services/blob_db/app_glance_db.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 static GContext s_ctx;
 
@@ -232,6 +232,10 @@ MenuScrollVibeBehavior shell_prefs_get_menu_scroll_vibe_behavior(void) {
 
 bool shell_prefs_get_menu_scroll_wrap_around_enable(void) {
   return false;
+}
+
+PreferredContentSize system_theme_get_content_size(void) {
+  return PreferredContentSizeDefault;
 }
 
 void vibes_enqueue_custom_pattern(VibePattern pattern) {}

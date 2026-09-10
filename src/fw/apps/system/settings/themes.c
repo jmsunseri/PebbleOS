@@ -4,18 +4,14 @@
 #include "themes.h"
 #include "menu.h"
 #include "option_menu.h"
-#include "window.h"
 
-#include "applib/ui/dialogs/dialog.h"
 #include "applib/ui/dialogs/expandable_dialog.h"
 #include "applib/graphics/gtypes.h"
-#include "applib/graphics/graphics.h"
 #include "applib/ui/menu_layer.h"
-#include "kernel/pbl_malloc.h"
 #include "pbl/services/i18n/i18n.h"
 #include "shell/prefs.h"
 #include "system/passert.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #ifdef CONFIG_THEMING
 

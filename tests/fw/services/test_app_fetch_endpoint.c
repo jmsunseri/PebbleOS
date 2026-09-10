@@ -5,8 +5,8 @@
 
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/app_fetch_endpoint.h"
-#include "system/logging.h"
-#include "util/attributes.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/attributes.h"
 
 
 #include <stdio.h>
@@ -27,7 +27,6 @@
 #include "stubs_logging.h"
 #include "stubs_passert.h"
 #include "stubs_rand_ptr.h"
-#include "stubs_queue.h"
 
 typedef struct {} EventServiceInfo;
 

@@ -15,10 +15,11 @@ The serialization of both types of commands is described in the 'Command' class 
 import math
 import sys
 from struct import pack
+
 from pebble_image_routines import (
     nearest_color_to_pebble64_palette,
-    truncate_color_to_pebble64_palette,
     rgba32_triplet_to_argb8,
+    truncate_color_to_pebble64_palette,
 )
 
 epsilon = sys.float_info.epsilon
@@ -83,9 +84,7 @@ def convert_to_pebble_coordinates(point, verbose=False, precise=False):
     valid = compare_points(point, nearest)
     if not valid and verbose:
         print(
-            "Invalid point: ({}, {}). Closest supported coordinate: ({}, {})".format(
-                point[0], point[1], nearest[0], nearest[1]
-            )
+            f"Invalid point: ({point[0]}, {point[1]}). Closest supported coordinate: ({nearest[0]}, {nearest[1]})"
         )
 
     translated = sum_points(point, (-0.5, -0.5))  # translate point by (-0.5, -0.5)
@@ -117,7 +116,7 @@ def convert_color(r, g, b, a, truncate=True):
 
     valid = valid_color(r, g, b, a)
     if not valid:
-        print("Invalid color: ({}, {}, {}, {})".format(r, g, b, a))
+        print(f"Invalid color: ({r}, {g}, {b}, {a})")
         return 0
 
     if truncate:
@@ -192,7 +191,7 @@ class Command:
         )
 
     def serialize_points(self):
-        s = pack("H", len(self.points))  # number of points (16-bit)
+        s = pack("<H", len(self.points))  # number of points (16-bit)
         for p in self.points:
             s += pack(
                 "<hh",
@@ -252,14 +251,7 @@ class PathCommand(Command):
         else:
             type = ""
         return (
-            "Path: [fill color:{}; stroke color:{}; stroke width:{}] {} {} {}".format(
-                self.fill_color,
-                self.stroke_color,
-                self.stroke_width,
-                points,
-                self.open,
-                type,
-            )
+            f"Path: [fill color:{self.fill_color}; stroke color:{self.stroke_color}; stroke width:{self.stroke_width}] {points} {self.open} {type}"
         )
 
 
@@ -283,22 +275,16 @@ class CircleCommand(Command):
     def serialize(self):
         s = pack("B", DRAW_COMMAND_TYPE_CIRCLE)  # command type
         s += self.serialize_common()
-        s += pack("H", int(self.radius))  # circle radius (16-bit)
+        s += pack("<H", int(self.radius))  # circle radius (16-bit)
         s += self.serialize_points()
         return s
 
     def __str__(self):
-        return "Circle: [fill color:{}; stroke color:{}; stroke width:{}] {} {}".format(
-            self.fill_color,
-            self.stroke_color,
-            self.stroke_width,
-            self.points[0],
-            self.radius,
-        )
+        return f"Circle: [fill color:{self.fill_color}; stroke color:{self.stroke_color}; stroke width:{self.stroke_width}] {self.points[0]} {self.radius}"
 
 
 def serialize(commands):
-    output = pack("H", len(commands))  # number of commands in list
+    output = pack("<H", len(commands))  # number of commands in list
     for c in commands:
         output += c.serialize()
 
@@ -312,27 +298,27 @@ def print_commands(commands):
 
 def print_frames(frames):
     for i in range(len(frames)):
-        print("Frame {}:".format(i + 1))
+        print(f"Frame {i + 1}:")
         print_commands(frames[i])
 
 
 def serialize_frame(frame, duration):
-    return pack("H", duration) + serialize(frame)  # Frame duration
+    return pack("<H", duration) + serialize(frame)  # Frame duration
 
 
 def pack_header(size):
     return pack(
-        "<BBhh", DRAW_COMMAND_VERSION, 0, int(round(size[0])), int(round(size[1]))
+        "<BBhh", DRAW_COMMAND_VERSION, 0, round(size[0]), round(size[1])
     )
 
 
 def serialize_sequence(frames, size, duration, play_count):
-    s = pack_header(size) + pack("H", play_count) + pack("H", len(frames))
+    s = pack_header(size) + pack("<H", play_count) + pack("<H", len(frames))
     for f in frames:
         s += serialize_frame(f, duration)
 
     output = b"PDCS"
-    output += pack("I", len(s))
+    output += pack("<I", len(s))
     output += s
     return output
 
@@ -342,6 +328,6 @@ def serialize_image(commands, size):
     s += serialize(commands)
 
     output = b"PDCI"
-    output += pack("I", len(s))
+    output += pack("<I", len(s))
     output += s
     return output

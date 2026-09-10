@@ -4,16 +4,15 @@
 #include "dbgserial_input.h"
 
 #include "board/board.h"
-#include "drivers/uart.h"
-#include "util/attributes.h"
+#include <pbl/drivers/uart.h>
 
 #if !defined(CONFIG_RELEASE) || defined(CONFIG_MFG)
 
 static DbgSerialCharacterCallback s_character_callback;
 
 //! We DMA into this buffer as a circular buffer
-#define DMA_BUFFER_LENGTH (200)
-static uint8_t s_dma_buffer[DMA_BUFFER_LENGTH] __attribute__((aligned(4)));
+#define DMA_BUFFER_LENGTH (256)
+static uint8_t s_dma_buffer[DMA_BUFFER_LENGTH] __attribute__((aligned(32)));
 static bool s_dma_enabled = false;
 
 static bool prv_uart_irq_handler(UARTDevice *dev, uint8_t data, const UARTRXErrorFlags *err_flags) {

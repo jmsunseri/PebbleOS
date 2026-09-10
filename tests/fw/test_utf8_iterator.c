@@ -1,7 +1,7 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "util/iterator.h"
+#include "pbl/util/iterator.h"
 #include "utf8_test_data.h"
 #include "applib/graphics/utf8.h"
 
@@ -184,7 +184,7 @@ void test_utf8_iterator__each_codepoint_invalid(void) {
   cl_assert_equal_i(s_each_count, 0);
 }
 
-void test_utf8_iterator__each_codepoint_emptry_string(void) {
+void test_utf8_iterator__each_codepoint_empty_string(void) {
   void *context = (void *)(uintptr_t)0x42;
   const char *str = "";
   s_each_count = 0;

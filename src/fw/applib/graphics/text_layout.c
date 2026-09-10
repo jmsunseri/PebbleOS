@@ -29,16 +29,15 @@
 #include "process_state/app_state/app_state.h"
 #include "applib/applib_malloc.auto.h"
 #include "process_state/app_state/app_state.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/hash.h"
-#include "util/iterator.h"
-#include "util/math.h"
+#include "pbl/util/hash.h"
+#include "pbl/util/iterator.h"
+#include "pbl/util/math.h"
 
 #include "process_management/process_manager.h"
 
 #include <stdint.h>
-#include <string.h>
 #include <limits.h>
 
 static bool prv_char_iter_next_start_of_word(Iterator* char_iter);
@@ -230,6 +229,19 @@ WordState word_state_update(WordState state, Codepoint codepoint) {
 
 //! @return true if init to new word, false otherwise (ie end of text)
 //! @note assumes 'start' is not NULL, but does not assume 'start' is valid start of word
+static Codepoint prv_peek_next_letter(utf8_t *pos, const utf8_t *end);
+
+// Pair shaping shared by the measuring and rendering passes; emoji pairs fold
+// first, then the existing script shaping runs.
+static Codepoint prv_shape_pair(Codepoint prev_cp, Codepoint curr_cp, Codepoint next_cp,
+                                bool *consumed_next) {
+  Codepoint shaped_cp = emoji_shape_pair(curr_cp, next_cp, consumed_next);
+  if (shaped_cp != curr_cp || *consumed_next) {
+    return shaped_cp;
+  }
+  return arabic_shape_pair(prev_cp, curr_cp, next_cp, consumed_next);
+}
+
 bool word_init(GContext* ctx, Word* word, const TextBoxParams* const text_box_params, utf8_t* start) {
   word->width_px = 0;
 
@@ -263,18 +275,42 @@ bool word_init(GContext* ctx, Word* word, const TextBoxParams* const text_box_pa
   Codepoint curr_cp = utf8_iter_state->codepoint;
   WordState state = WordStateStart;
   state = word_state_update(state, curr_cp);
+  // prv_shape_pair() can fold this codepoint and the next into one glyph and
+  // report the next as consumed; its advance is then already counted, so the
+  // folded codepoint is skipped later. Marks (harakat) are transparent: they
+  // keep their own width but are stepped over when picking joining context,
+  // like the renderer.
+  bool skip_ligature_member = false;
+  const utf8_t *bounds_end =
+      (text_box_params->utf8_bounds != NULL) ? text_box_params->utf8_bounds->end : NULL;
 
   do {
+    utf8_t *curr_pos = utf8_iter_state->current;
     iter_next(&char_iter);
     Codepoint next_cp = utf8_iter_state->codepoint;
 
     if (state == WordStateGrowing || state == WordStateIdeograph) {
-      Codepoint width_cp = arabic_shape_codepoint(prev_cp, curr_cp, next_cp);
-      word->width_px += prv_codepoint_get_horizontal_advance(&ctx->font_cache,
-          text_box_params->font, width_cp);
+      if (skip_ligature_member && !arabic_is_transparent(curr_cp)) {
+        // Folded into the preceding pair: already counted.
+        skip_ligature_member = false;
+      } else if (arabic_is_transparent(curr_cp)) {
+        // A mark keeps its own width but is not reshaped.
+        word->width_px += prv_codepoint_get_horizontal_advance(&ctx->font_cache,
+            text_box_params->font, curr_cp);
+      } else {
+        Codepoint shape_next =
+            arabic_is_transparent(next_cp) ? prv_peek_next_letter(curr_pos, bounds_end) : next_cp;
+        bool consumed_next = false;
+        Codepoint width_cp = prv_shape_pair(prev_cp, curr_cp, shape_next, &consumed_next);
+        word->width_px += prv_codepoint_get_horizontal_advance(&ctx->font_cache,
+            text_box_params->font, width_cp);
+        skip_ligature_member = consumed_next;
+      }
     }
 
-    prev_cp = curr_cp;
+    if (!arabic_is_transparent(curr_cp)) {
+      prev_cp = curr_cp;
+    }
     curr_cp = next_cp;
     state = word_state_update(state, curr_cp);
   } while (state != WordStateEnd);
@@ -365,13 +401,13 @@ static bool prv_line_iter_is_vertical_overflow(const LineIterState* const line_i
   // if we're not rendering the first line.
   //    - This, because the user does not expect to see more text drawn below, after the '...'.
   //    - The first-line exception means that text, and therefore the telltale
-  //      ellipsis, will always be visisble.
+  //      ellipsis, will always be visible.
   if ((text_box_params->overflow_mode == GTextOverflowModeTrailingEllipsis ||
        text_box_params->overflow_mode == GTextOverflowModeFill) &&
       line_iter_state->current->origin.y != text_box_params->box.origin.y) {
     // We're in a truncation mode AND not on the first line.
     // So, include the full height of the current line in next_line_y_extent, so text will stop
-    // being layed out immediately after it exceeds the height of the container.
+    // being laid out immediately after it exceeds the height of the container.
     next_line_y_extent = line_iter_state->current->origin.y + prv_get_line_height(text_box_params);
   } else {
     // We're either in a non-truncating mode, or on the first line of a truncating mode.
@@ -494,7 +530,7 @@ bool char_iter_prev(IteratorState state) {
 //! Trim given codepoint from the start of the word
 //! Used to remove whitespace and newlines
 //! @return is_trimmed
-bool word_trim_preceeding_codepoint(GContext* ctx, Word* word, const Codepoint codepoint,
+bool word_trim_preceding_codepoint(GContext* ctx, Word* word, const Codepoint codepoint,
                                     const TextBoxParams* const text_box_params) {
   Iterator char_iter;
   CharIterState char_iter_state;
@@ -536,8 +572,8 @@ bool word_trim_preceeding_codepoint(GContext* ctx, Word* word, const Codepoint c
 }
 
 // [INTL] whitespace is more than just the space character.
-void word_trim_preceeding_whitespace(GContext* ctx, Word* word, const TextBoxParams* const text_box_params) {
-  while (word_trim_preceeding_codepoint(ctx, word, SPACE_CODEPOINT, text_box_params));
+void word_trim_preceding_whitespace(GContext* ctx, Word* word, const TextBoxParams* const text_box_params) {
+  while (word_trim_preceding_codepoint(ctx, word, SPACE_CODEPOINT, text_box_params));
 }
 
 ////////////////////////////////////////////////////////////
@@ -558,17 +594,57 @@ void render_chars_char_visitor_cb(GContext* ctx, const TextBoxParams* const text
 void update_dimensions_char_visitor_cb(GContext* ctx, const TextBoxParams* const text_box_params,
                                        Line* line, GRect cursor, const Codepoint codepoint) {
   (void) ctx;
+  (void) codepoint;
   PBL_ASSERT(cursor.origin.x >= line->origin.x, "Text cursor x=<%u> ahead of line origin x=<%u>",
       cursor.origin.x, line->origin.x);
 
-  const int glyph_width_px = prv_codepoint_get_horizontal_advance(&ctx->font_cache,
-      text_box_params->font, codepoint);
+  // Use the advance the caller already computed (the cursor width). walk_line
+  // makes it pair-aware -- a folded pair is one glyph -- so recomputing it per
+  // codepoint here would double-count the folded member on the measurement path.
+  const int glyph_width_px = cursor.size.w;
 
   line->width_px = (cursor.origin.x + glyph_width_px) - line->origin.x;
 
   PBL_ASSERT(line->width_px <= text_box_params->box.size.w,
       "Line <%p>: max extent=<%" PRId16 "> exceeds text_box_params width=<%" PRId16 ">",
       line, line->width_px + line->origin.x, text_box_params->box.size.w);
+}
+
+// Peek the next letter after the one at `pos`, skipping transparent Arabic marks
+// and bounded by `end`. Returns 0 at a line/text boundary. Lets the width pass
+// fold a Lam-Alef (even across an intervening harakat) into one ligature advance
+// and pick the same joining context the renderer shapes with.
+static Codepoint prv_peek_next_letter(utf8_t *pos, const utf8_t *end) {
+  if (pos == NULL) {
+    return 0;
+  }
+  utf8_t *after = NULL;
+  utf8_peek_codepoint(pos, &after);
+  while (after != NULL && (end == NULL || after < end) && *after != '\0' && *after != '\n') {
+    utf8_t *next = NULL;
+    Codepoint cp = utf8_peek_codepoint(after, &next);
+    if (cp == 0 || next == NULL) {
+      break;
+    }
+    if (!arabic_is_transparent(cp)) {
+      return cp;
+    }
+    after = next;
+  }
+  return 0;
+}
+
+// Pair-aware glyph advance: a pair folded by prv_shape_pair() measures as the
+// single glyph it draws as, matching word_init and the render path.
+// *consumed_next is set when the next codepoint was folded in and must
+// therefore contribute zero width. *shaped_cp receives the folded codepoint so
+// the draw pass renders the glyph that was measured.
+static int prv_shaped_glyph_advance(GContext *ctx, const TextBoxParams *text_box_params,
+                                    Codepoint prev_cp, Codepoint curr_cp, Codepoint next_cp,
+                                    bool *consumed_next, Codepoint *shaped_cp) {
+  Codepoint width_cp = prv_shape_pair(prev_cp, curr_cp, next_cp, consumed_next);
+  *shaped_cp = width_cp;
+  return prv_codepoint_get_horizontal_advance(&ctx->font_cache, text_box_params->font, width_cp);
 }
 
 //! Call char_visitor_cb on each character in the line
@@ -621,7 +697,8 @@ utf8_t* walk_line(GContext* ctx, Line* line, const TextBoxParams* const text_box
       utf8_contains_rtl(line->start, text_box_params->utf8_bounds->end)) {
 
     // Segment descriptor for BiDi reordering
-    #define MAX_BIDI_SEGMENTS 8
+    // Headroom for splitting boundary spaces into their own neutral segments.
+    #define MAX_BIDI_SEGMENTS 16
     typedef struct {
       utf8_t *start;
       utf8_t *end;
@@ -669,6 +746,10 @@ utf8_t* walk_line(GContext* ctx, Line* line, const TextBoxParams* const text_box
       // layout (word_init) and by the actual draw pass below — letters at
       // the line edge get truncated and a gap appears.
       Codepoint prev_seg_cp = 0;
+      // prv_shape_pair() may combine this codepoint with the next into one
+      // glyph and report the next as consumed; its advance is then already
+      // counted, so skip it on the following iteration.
+      bool skip_ligature_member = false;
       while (segment_end < line_end && *segment_end != '\0' && *segment_end != '\n') {
         utf8_t *seg_next = NULL;
         Codepoint seg_cp = utf8_peek_codepoint(segment_end, &seg_next);
@@ -689,50 +770,61 @@ utf8_t* walk_line(GContext* ctx, Line* line, const TextBoxParams* const text_box
           }
         }
 
-        // For RTL segments: don't include trailing spaces before LTR text
-        if (segment_is_rtl && seg_cp == SPACE_CODEPOINT) {
-          utf8_t *look_ptr = seg_next;
-          while (look_ptr < line_end && *look_ptr != '\0' && *look_ptr != '\n') {
-            utf8_t *look_next = NULL;
-            Codepoint look_cp = utf8_peek_codepoint(look_ptr, &look_next);
-            if (look_cp == 0 || look_next == NULL) break;
-            if (look_cp != SPACE_CODEPOINT && !codepoint_is_zero_width(look_cp) &&
-                !prv_codepoint_is_punctuation(look_cp)) {
-              if (!codepoint_is_rtl(look_cp)) {
-                goto end_segment_collect;
-              }
-              break;
-            }
-            look_ptr = look_next;
+        // Trailing spaces are kept in the run here and split out after the loop
+        // (see the trailing-space peel below) so they reorder between runs.
+
+        if (skip_ligature_member && !arabic_is_transparent(seg_cp)) {
+          // Folded into the preceding pair: already counted.
+          skip_ligature_member = false;
+        } else {
+          Codepoint width_cp;
+          if (arabic_is_transparent(seg_cp)) {
+            // A mark keeps its own width but is not reshaped.
+            width_cp = seg_cp;
+          } else {
+            Codepoint next_seg_cp = prv_peek_next_letter(segment_end, line_end);
+            bool consumed_next = false;
+            width_cp = prv_shape_pair(prev_seg_cp, seg_cp, next_seg_cp, &consumed_next);
+            skip_ligature_member = consumed_next;
           }
+          int glyph_width = prv_codepoint_get_horizontal_advance(&ctx->font_cache,
+              text_box_params->font, width_cp);
+          if (total_width_px + segment_width_px + glyph_width + suffix_width_px > available_horiz_px) {
+            break;
+          }
+          segment_width_px += glyph_width;
         }
 
-        Codepoint next_seg_cp = 0;
-        if (seg_next < line_end && *seg_next != '\0' && *seg_next != '\n') {
-          utf8_t *peek_next = NULL;
-          next_seg_cp = utf8_peek_codepoint(seg_next, &peek_next);
+        if (!arabic_is_transparent(seg_cp)) {
+          prev_seg_cp = seg_cp;
         }
-        Codepoint width_cp = arabic_shape_codepoint(prev_seg_cp, seg_cp, next_seg_cp);
-        int glyph_width = prv_codepoint_get_horizontal_advance(&ctx->font_cache,
-            text_box_params->font, width_cp);
-        if (total_width_px + segment_width_px + glyph_width + suffix_width_px > available_horiz_px) {
-          break;
-        }
-
-        prev_seg_cp = seg_cp;
-        segment_width_px += glyph_width;
         segment_end = seg_next;
       }
-      end_segment_collect:
-
       size_t segment_len = segment_end - segment_start;
       if (segment_len == 0) break;
 
-      segments[num_segments++] = (BiDiSegment){
-        .start = segment_start,
-        .end = segment_end,
-        .is_rtl = segment_is_rtl,
-      };
+      // Peel trailing spaces into their own neutral segment. A space between
+      // two runs is direction-neutral: if it stays inside a run it is reversed
+      // with that run and the segment reorder then carries it to the run's far
+      // edge, so the gap separating the two runs collapses. As its own segment
+      // it stays put between the runs it separates.
+      utf8_t *content_end = rtl_segment_content_end(segment_start, segment_end);
+
+      if (content_end > segment_start && content_end < segment_end) {
+        // strong-direction content, then the trailing space(s) as a neutral
+        segments[num_segments++] = (BiDiSegment){
+          .start = segment_start, .end = content_end, .is_rtl = segment_is_rtl,
+        };
+        if (num_segments < MAX_BIDI_SEGMENTS) {
+          segments[num_segments++] = (BiDiSegment){
+            .start = content_end, .end = segment_end, .is_rtl = false,
+          };
+        }
+      } else {
+        segments[num_segments++] = (BiDiSegment){
+          .start = segment_start, .end = segment_end, .is_rtl = segment_is_rtl,
+        };
+      }
       total_width_px += segment_width_px;
       ptr = segment_end;
     }
@@ -810,7 +902,7 @@ utf8_t* walk_line(GContext* ctx, Line* line, const TextBoxParams* const text_box
             cursor.origin.x += walked_width_px;
 
             if (!codepoint_is_zero_width(rcp)) {
-              text_resources_get_glyph(&ctx->font_cache, rcp, text_box_params->font);
+              text_resources_get_glyph(&ctx->font_cache, rcp, text_box_params->font, NULL);
               render_glyph(ctx, rcp, text_box_params->font, cursor);
             }
 
@@ -819,30 +911,53 @@ utf8_t* walk_line(GContext* ctx, Line* line, const TextBoxParams* const text_box
           }
         }
       } else {
-        // LTR segment: render normally
+        // LTR segment: render folding pairs exactly like the pass-1 width
+        // measurement above, so both passes agree on what gets drawn.
         utf8_t *sptr = seg->start;
+        Codepoint prev_seg_cp = 0;
+        bool skip_pair_member = false;
         while (sptr < seg->end) {
           utf8_t *snext = NULL;
           Codepoint scp = utf8_peek_codepoint(sptr, &snext);
           if (scp == 0 || snext == NULL) break;
           if (prv_codepoint_is_invisible(scp)) { sptr = snext; continue; }
 
-          int glyph_width = prv_codepoint_get_horizontal_advance(&ctx->font_cache,
-              text_box_params->font, scp);
+          if (skip_pair_member && !arabic_is_transparent(scp)) {
+            // Folded into the preceding pair: already drawn, adds no width.
+            skip_pair_member = false;
+          } else {
+            Codepoint draw_cp;
+            if (arabic_is_transparent(scp)) {
+              // A mark keeps its own width and glyph.
+              draw_cp = scp;
+            } else {
+              Codepoint next_seg_cp = prv_peek_next_letter(sptr, seg->end);
+              bool consumed_next = false;
+              draw_cp = prv_shape_pair(prev_seg_cp, scp, next_seg_cp, &consumed_next);
+              skip_pair_member = consumed_next;
+            }
 
-          GRect cursor = {
-            .origin = line->origin,
-            .size.w = glyph_width,
-            .size.h = fonts_get_font_height(text_box_params->font)
-          };
-          cursor.origin.x += walked_width_px;
+            int glyph_width = prv_codepoint_get_horizontal_advance(&ctx->font_cache,
+                text_box_params->font, draw_cp);
 
-          if (!codepoint_is_zero_width(scp)) {
-            text_resources_get_glyph(&ctx->font_cache, scp, text_box_params->font);
-            render_glyph(ctx, scp, text_box_params->font, cursor);
+            GRect cursor = {
+              .origin = line->origin,
+              .size.w = glyph_width,
+              .size.h = fonts_get_font_height(text_box_params->font)
+            };
+            cursor.origin.x += walked_width_px;
+
+            if (!codepoint_is_zero_width(draw_cp)) {
+              text_resources_get_glyph(&ctx->font_cache, draw_cp, text_box_params->font, NULL);
+              render_glyph(ctx, draw_cp, text_box_params->font, cursor);
+            }
+
+            walked_width_px += glyph_width;
           }
 
-          walked_width_px += glyph_width;
+          if (!arabic_is_transparent(scp)) {
+            prev_seg_cp = scp;
+          }
           sptr = snext;
         }
       }
@@ -861,7 +976,8 @@ utf8_t* walk_line(GContext* ctx, Line* line, const TextBoxParams* const text_box
         .size.h = fonts_get_font_height(text_box_params->font)
       };
       cursor.origin.x += walked_width_px;
-      text_resources_get_glyph(&ctx->font_cache, line->suffix_codepoint, text_box_params->font);
+      text_resources_get_glyph(&ctx->font_cache, line->suffix_codepoint, text_box_params->font,
+                               NULL);
       render_glyph(ctx, line->suffix_codepoint, text_box_params->font, cursor);
     }
 
@@ -884,9 +1000,18 @@ utf8_t* walk_line(GContext* ctx, Line* line, const TextBoxParams* const text_box
     }
   }
 
+  const utf8_t *text_end =
+      (text_box_params->utf8_bounds != NULL) ? text_box_params->utf8_bounds->end : NULL;
+
   int walked_width_px = 0;
-  int next_glyph_width_px = prv_codepoint_get_horizontal_advance(&ctx->font_cache,
-      text_box_params->font, current_codepoint);
+  Codepoint prev_shaped_cp = 0;       // previous codepoint, for Arabic joining context
+  bool skip_ligature_member = false;  // current codepoint was folded into a preceding pair
+  bool consumed_next = false;
+  bool current_folded = false;        // current codepoint was folded into the preceding pair
+  Codepoint current_draw_cp = current_codepoint;  // shaped codepoint whose advance was measured
+  Codepoint peek_cp = prv_peek_next_letter(utf8_iter_state->current, text_end);
+  int next_glyph_width_px = prv_shaped_glyph_advance(ctx, text_box_params, prev_shaped_cp,
+      current_codepoint, peek_cp, &consumed_next, &current_draw_cp);
 
   utf8_t* last_visited_char = NULL;
 
@@ -898,17 +1023,31 @@ utf8_t* walk_line(GContext* ctx, Line* line, const TextBoxParams* const text_box
     };
     cursor.origin.x += walked_width_px;
 
-    if (is_render && !codepoint_is_zero_width(current_codepoint) &&
-        !codepoint_is_unicode_space(current_codepoint)) {
-      // Pre-load here so the deeper render_glyph() is a cache hit, not a deep flash read.
-      text_resources_get_glyph(&ctx->font_cache, current_codepoint, text_box_params->font);
-    }
+    // A codepoint folded into the preceding pair has zero width and must not
+    // draw over the pair's glyph; everything else draws the shaped codepoint
+    // whose advance was measured.
+    if (!current_folded) {
+      if (is_render && !codepoint_is_zero_width(current_draw_cp) &&
+          !codepoint_is_unicode_space(current_draw_cp)) {
+        // Pre-load here so the deeper render_glyph() is a cache hit, not a deep flash read.
+        text_resources_get_glyph(&ctx->font_cache, current_draw_cp, text_box_params->font, NULL);
+      }
 
-    char_visitor_cb(ctx, text_box_params, line, cursor, current_codepoint);
+      char_visitor_cb(ctx, text_box_params, line, cursor, current_draw_cp);
+    }
 
     walked_width_px += next_glyph_width_px;
 
     last_visited_char = utf8_iter_state->current;
+
+    // Carry the ligature decision before advancing. Marks (harakat) keep their
+    // width but do not break joining context, so they leave prev/skip untouched.
+    if (consumed_next) {
+      skip_ligature_member = true;
+    }
+    if (!arabic_is_transparent(current_codepoint)) {
+      prev_shaped_cp = current_codepoint;
+    }
 
     if (!iter_next(&char_iter)) {
       break;
@@ -923,8 +1062,23 @@ utf8_t* walk_line(GContext* ctx, Line* line, const TextBoxParams* const text_box
       }
     }
 
-    next_glyph_width_px = prv_codepoint_get_horizontal_advance(&ctx->font_cache,
-        text_box_params->font, current_codepoint);
+    consumed_next = false;
+    current_folded = false;
+    if (skip_ligature_member && !arabic_is_transparent(current_codepoint)) {
+      // Folded into the preceding pair: adds no width.
+      next_glyph_width_px = 0;
+      skip_ligature_member = false;
+      current_folded = true;
+    } else if (arabic_is_transparent(current_codepoint)) {
+      // A mark keeps its own width but is not reshaped.
+      current_draw_cp = current_codepoint;
+      next_glyph_width_px = prv_codepoint_get_horizontal_advance(&ctx->font_cache,
+          text_box_params->font, current_codepoint);
+    } else {
+      peek_cp = prv_peek_next_letter(utf8_iter_state->current, text_end);
+      next_glyph_width_px = prv_shaped_glyph_advance(ctx, text_box_params, prev_shaped_cp,
+          current_codepoint, peek_cp, &consumed_next, &current_draw_cp);
+    }
   }
 
   // Trim trailing whitespace
@@ -955,13 +1109,14 @@ utf8_t* walk_line(GContext* ctx, Line* line, const TextBoxParams* const text_box
   if (line->suffix_codepoint) {
     GRect cursor = {
       .origin = line->origin,
-      .size.w = next_glyph_width_px,
+      .size.w = suffix_width_px,
       .size.h = fonts_get_font_height(text_box_params->font)
     };
     cursor.origin.x += walked_width_px;
     if (char_visitor_cb) {
       if (is_render) {
-        text_resources_get_glyph(&ctx->font_cache, line->suffix_codepoint, text_box_params->font);
+        text_resources_get_glyph(&ctx->font_cache, line->suffix_codepoint, text_box_params->font,
+                                 NULL);
       }
       char_visitor_cb(ctx, text_box_params, line, cursor, line->suffix_codepoint);
     }
@@ -1157,11 +1312,11 @@ static inline void prv_walk_lines_down(Iterator* const line_iter, TextLayout* co
     const Word word_before_rendering = *current_word_ref;
     const OrphanLineState orphan_state = prv_capture_orphan_state(line);
 
-    // When repeating text to prevent orhpans we could run into the situation where repeating text
+    // When repeating text to prevent orphans we could run into the situation where repeating text
     // pushes down the remaining text far enough so it ends up on yet another page. This would
     // enter an infinite loop.
     // To avoid that, we only apply this strategy, when it's "safe" to do so (in theory, there's
-    // still the propability to run into this scenario if the perimeter isn't vertically symmetric).
+    // still the probability to run into this scenario if the perimeter isn't vertically symmetric).
     // The chosen number should be large enough for the previous line, the orphan line plus some
     // buffer.
     const int num_safe_lines = 3;
@@ -1189,7 +1344,7 @@ render_line: {} // this {} is just an empty statement that both C and our linter
         if (is_orphan) {
           *current_word_ref = prev_line_word;
           prv_apply_orphan_state(&orphan_state, line);
-          avoiding_orphans = false; // prevent infinte loops
+          avoiding_orphans = false; // prevent infinite loops
           goto render_line;
         }
       }
@@ -1244,7 +1399,7 @@ bool line_add_word(GContext* ctx, Line* line, Word* word, const TextBoxParams* c
   if (is_newline_first_codepoint) {
     // This trims off leading \n's from word. If we reach the end of the text while doing this, it sets
     //  word->start to NULL. 
-    word_trim_preceeding_codepoint(ctx, word, NEWLINE_CODEPOINT, text_box_params);
+    word_trim_preceding_codepoint(ctx, word, NEWLINE_CODEPOINT, text_box_params);
     if (text_box_params->overflow_mode != GTextOverflowModeFill) {
       return false;
     }
@@ -1290,7 +1445,7 @@ bool line_add_word(GContext* ctx, Line* line, Word* word, const TextBoxParams* c
   }
 
   // Word-wrap
-  word_trim_preceeding_whitespace(ctx, word, text_box_params);
+  word_trim_preceding_whitespace(ctx, word, text_box_params);
   return false;
 }
 
@@ -1393,7 +1548,9 @@ static inline void prv_text_walk_lines(GContext* ctx, TextLayout* const layout,
 
   TextBoxParams *text_box = &ctx->text_draw_state.text_box;
 
-  if (grect_is_empty(&text_box->box)) {
+  // Degenerate boxes draw nothing; negative sizes must not reach line layout
+  // (grect_is_empty only catches sizes that are exactly zero)
+  if (text_box->box.size.w <= 0 || text_box->box.size.h <= 0) {
     return;
   }
 

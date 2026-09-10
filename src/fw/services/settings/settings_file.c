@@ -4,11 +4,11 @@
 #include "pbl/services/settings/settings_file.h"
 #include "pbl/services/settings/settings_raw_iter.h"
 
-#include "drivers/rtc.h"
-#include "drivers/task_watchdog.h"
+#include <pbl/drivers/rtc.h>
+#include <pbl/drivers/task_watchdog.h>
 #include "kernel/pbl_malloc.h"
 #include "pbl/services/filesystem/pfs.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "util/crc8.h"
 
@@ -36,7 +36,7 @@ static status_t prv_open(SettingsFile *file, const char *name, uint8_t flags,
   // max_space_total == alloc_used_space, then if the file is full, changing a
   // single value would force the whole file to be rewritten- every single
   // time! It's probably worth it to "waste" a bit of flash space to avoid
-  // this pathalogical case.
+  // this pathological case.
   int max_space_total = pfs_sector_optimal_size(alloc_used_space * 12 / 10, strlen(name));
 
   int fd = pfs_open(name, flags, FILE_TYPE_STATIC, max_space_total);
@@ -111,7 +111,7 @@ static status_t prv_open(SettingsFile *file, const char *name, uint8_t flags,
   // firmware). If we detect that situation, let's re-write the file to the new larger requested
   // size.
   if (alloc_used_space >= max_used_space && actual_size < max_space_total) {
-    PBL_LOG_INFO("Re-writing settings file %s to increase its size from %d to %d.",
+    PBL_LOG_DBG("Re-writing settings file %s to increase its size from %d to %d.",
             name, actual_size, max_space_total);
     status = settings_file_rewrite_filtered(file, NULL, NULL);
     if (status < 0) {
@@ -170,10 +170,10 @@ static bool flag_is_set(SettingsRecordHeader *hdr, uint8_t flags) {
 //     the entire record has not been completely written yet. Records in this
 //     state are removed on bootup, since they are in an indeterminate state.
 // - written: The typical state for a record. == !partially_written
-// - partially_overwritten: This record has been superceeded by another, which
+// - partially_overwritten: This record has been superseded by another, which
 //     we are currently in the process of writing out to flash. Records in
 //     this state are restored on bootup.
-// - overwritten: This record has been superceeded by another, which has been
+// - overwritten: This record has been superseded by another, which has been
 //     completely written out to flash. We skip over and ignore overwritten
 //     records.
 static bool partially_written(SettingsRecordHeader *hdr) {
@@ -218,13 +218,6 @@ static void compute_stats(SettingsFile *file) {
 
 status_t settings_file_rewrite_filtered(
     SettingsFile *file, SettingsFileRewriteFilterCallback filter_cb, void *context) {
-  // FIRM-1649: instrumentation. Compaction holds the per-storage mutex for the
-  // entire rewrite under flash erases that can take seconds; suspected cause of
-  // multi-second KernelMain stalls. Log start/end + elapsed.
-  const RtcTicks rewrite_start_ticks = rtc_get_ticks();
-  PBL_LOG_INFO("FIRM-1649: settings_file_rewrite_filtered start file=%s",
-               file->name);
-
   // One reusable buffer for key+val per record; sized for the worst case.
   // Avoids two malloc/free pairs per record over what can be thousands of
   // records on a large persist file.
@@ -295,7 +288,7 @@ status_t settings_file_rewrite_filtered(
   settings_file_close(file);
   // We have to close and reopen the new_file so that it's temp flag is cleared.
   // Before the close succeeds, if we reboot, we will just end up reading the
-  // old file. After the close suceeds, we will end up reading the new
+  // old file. After the close succeeds, we will end up reading the new
   // (compacted) file.
   int alloc_used_space = new_file.alloc_used_space;
   int min_alloc_used_space = new_file.min_alloc_used_space;
@@ -305,13 +298,6 @@ status_t settings_file_rewrite_filtered(
   kernel_free(name);
 
   task_watchdog_resume();
-
-  // FIRM-1649: instrumentation. See note at the top of this function.
-  const uint32_t rewrite_elapsed_ms =
-      (uint32_t)(((rtc_get_ticks() - rewrite_start_ticks) * 1000) / RTC_TICKS_HZ);
-  PBL_LOG_INFO(
-      "FIRM-1649: settings_file_rewrite_filtered end file=%s elapsed=%"PRIu32"ms status=%"PRIi32,
-      file->name, rewrite_elapsed_ms, status);
 
   return status;
 }
@@ -731,7 +717,7 @@ status_t settings_file_rewrite(SettingsFile *file,
   settings_file_close(file);
   // We have to close and reopen the new_file so that it's temp flag is cleared.
   // Before the close succeeds, if we reboot, we will just end up reading the
-  // old file. After the close suceeds, we will end up reading the new
+  // old file. After the close succeeds, we will end up reading the new
   // (compacted) file.
   int alloc_used_space = new_file.alloc_used_space;
   int min_alloc_used_space = new_file.min_alloc_used_space;

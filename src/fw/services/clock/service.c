@@ -4,24 +4,22 @@
 #include "pbl/services/clock.h"
 
 #include "console/prompt.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "kernel/events.h"
-#include "kernel/pbl_malloc.h"
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/i18n/i18n.h"
 #include "pbl/services/regular_timer.h"
 #include "pbl/services/alarms/alarm.h"
 #include "pbl/services/timezone_database.h"
-#include "pbl/services/wakeup.h"
 #include "shell/prefs.h"
 #include "syscall/syscall.h"
 #include "syscall/syscall_internal.h"
-#include "system/logging.h"
-#include "util/attributes.h"
-#include "util/math.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/attributes.h"
+#include "pbl/util/math.h"
 #include "util/net.h"
-#include "util/size.h"
-#include "util/string.h"
+#include "pbl/util/size.h"
+#include "pbl/util/string.h"
 #include "pbl/services/analytics/analytics.h"
 
 #ifndef CONFIG_RECOVERY_FW
@@ -46,8 +44,9 @@ static const uint16_t protocol_time_endpoint_id = 11;
 static RegularTimerInfo s_dst_checker;
 
 #ifndef CONFIG_RECOVERY_FW
-// Armed on the first timer tick, after init has settled.
+// Armed once the services the chime path uses are initialized.
 static bool s_hourly_chime_armed;
+#define HOURLY_CHIME_GRACE_PERIOD_SECONDS 5
 #endif
 
 static time_t prv_migrate_local_time_to_UTC(time_t local_time) {
@@ -305,13 +304,6 @@ static void prv_handle_set_utc_and_timezone_msg(TimezoneCBData *tz_data) {
   tz_data->utc_time = ntohl(tz_data->utc_time);
   tz_data->utc_offset_min = ntohs(tz_data->utc_offset_min);
 
-  const char *region_name = tz_data->region_name;
-  if (tz_data->region_name_len == 0) {
-    region_name = "[N/A]";
-  }
-  PBL_LOG_INFO("set_timezone utc_time: %u offset: %d region_name: %s",
-          (int) tz_data->utc_time, (int) tz_data->utc_offset_min, region_name);
-
   TimezoneInfo tz_info = prv_get_timezone_info_from_data(tz_data);
   shell_prefs_set_automatic_timezone_id(tz_info.timezone_id);
   if (clock_time_source_is_manual()) {
@@ -393,15 +385,17 @@ void clock_protocol_msg_callback(CommSession *session, const uint8_t* data, unsi
 }
 
 // TODO: Using a regular timer is pretty gross...
+//! Runs once a minute from the regular_timer minutes list. DST transitions and
+//! the top of the hour both land on minute boundaries, so minute granularity
+//! detects them at the same instant the old per-second poll did.
 T_STATIC void prv_watch_dst(void* user) {
   const bool was_dst = (bool)user;
   const bool is_dst = time_get_isdst(rtc_get_time());
-  
+
 #ifndef CONFIG_RECOVERY_FW
-  if (!s_hourly_chime_armed) {
-    s_hourly_chime_armed = true;
-  } else if (alerts_should_vibrate_for_type(AlertOther) &&
-             (time_utc_to_local(rtc_get_time()) % SECONDS_PER_HOUR == 0)) {
+  const time_t seconds_into_hour = time_utc_to_local(rtc_get_time()) % SECONDS_PER_HOUR;
+  if (s_hourly_chime_armed && alerts_should_vibrate_for_type(AlertOther) &&
+      (seconds_into_hour < HOURLY_CHIME_GRACE_PERIOD_SECONDS)) {
     uint32_t vibe_id = vibe_score_info_get_resource_id(
         alerts_preferences_get_vibe_score_for_client(VibeClient_Hourly));
     VibeScore *score = vibe_score_create_with_resource_system(0, vibe_id);
@@ -449,8 +443,14 @@ void clock_init(void) {
 #ifndef CONFIG_RECOVERY_FW
   s_hourly_chime_armed = false;
 #endif
-  regular_timer_add_seconds_callback(&s_dst_checker);
+  regular_timer_add_minutes_callback(&s_dst_checker);
 }
+
+#ifndef CONFIG_RECOVERY_FW
+void clock_hourly_chime_arm(void) {
+  s_hourly_chime_armed = true;
+}
+#endif
 
 void clock_get_time_tm(struct tm* time_tm) {
   rtc_get_time_tm(time_tm);
@@ -726,7 +726,6 @@ int16_t clock_get_timezone_region_id(void) {
 void clock_set_timezone_by_region_id(uint16_t region_id) {
   TimezoneInfo tz_info;
   prv_clock_get_timezone_info_from_region_id(region_id, rtc_get_time(), &tz_info);
-  PBL_LOG_INFO("Set timezone by region id (%u)", region_id);
   prv_update_time_info_and_generate_event(NULL, &tz_info);
 }
 

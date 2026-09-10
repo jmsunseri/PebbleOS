@@ -9,32 +9,25 @@
 #include "applib/ui/dialogs/actionable_dialog.h"
 #include "applib/ui/dialogs/dialog.h"
 #include "applib/ui/dialogs/expandable_dialog.h"
-#include "applib/ui/dialogs/simple_dialog.h"
-#include "applib/ui/vibes.h"
 #include "applib/ui/window_manager.h"
-#include "applib/ui/window_stack.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "kernel/events.h"
 #include "kernel/ui/modals/modal_manager.h"
 #include "process_state/app_state/app_state.h"
 #include "resource/resource_ids.auto.h"
-#include "pbl/services/analytics/analytics.h"
 #include "pbl/services/i18n/i18n.h"
 #include "pbl/services/new_timer/new_timer.h"
 #include "pbl/services/system_task.h"
-#include "pbl/services/activity/activity.h"
 #include "pbl/services/notifications/alerts_preferences.h"
 #include "pbl/services/notifications/alerts_preferences_private.h"
 #include "pbl/services/timeline/calendar.h"
 #include "syscall/syscall_internal.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/list.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 #include "util/time/time.h"
 
 #include <stdbool.h>
-#include <string.h>
 
 PBL_LOG_MODULE_DECLARE(service_notifications, CONFIG_SERVICE_NOTIFICATIONS_LOG_LEVEL);
 
@@ -79,7 +72,7 @@ static void prv_do_update(void) {
     return;
   }
   s_data.was_active = is_active;
-  PBL_LOG_INFO("Quiet Time: %s", prv_bool_to_string(is_active));
+  PBL_LOG_DBG("Quiet Time: %s", prv_bool_to_string(is_active));
 
   prv_update_active_time(is_active);
   prv_put_dnd_event(is_active);
@@ -318,6 +311,10 @@ void do_not_disturb_init(void) {
 }
 
 void do_not_disturb_handle_clock_change(void) {
+  prv_try_update_schedule_mode_callback(false);
+}
+
+void do_not_disturb_handle_pref_synced(void) {
   prv_try_update_schedule_mode_callback(false);
 }
 

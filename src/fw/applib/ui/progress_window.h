@@ -94,7 +94,7 @@ void progress_window_set_max_fake_progress(ProgressWindow *window,
 
 //! Update the progress to a given percentage. This will stop any further fake progress being shown
 //! the first time this is called. Note that setting progress to 100 is not the same as calling
-//! one of the progress_windw_set_result_* methods.
+//! one of the progress_window_set_result_* methods.
 void progress_window_set_progress(ProgressWindow *window, int16_t progress);
 
 //! Tell the ProgressWindow it should animate in a way to show success. When the animation is
@@ -104,6 +104,7 @@ void progress_window_set_result_success(ProgressWindow *window);
 //! Tell the ProgressWindow it should animate in a way to show failure. When the animation is
 //! complete, .callbacks.finished will be called if previously provided.
 //!
+//! @param window ProgressWindow to modify
 //! @param timeline_res_id optional timeline resource, can be 0 if not desired
 //! @param message optional message, can be NULL
 //! @param delay duration of the progress bar shrinking animation in milliseconds

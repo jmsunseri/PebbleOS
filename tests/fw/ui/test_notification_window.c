@@ -10,7 +10,7 @@
 #include "popups/notifications/notification_window_private.h"
 #include "resource/timeline_resource_ids.auto.h"
 #include "pbl/services/timeline/notification_layout.h"
-#include "util/trig.h"
+#include "pbl/util/trig.h"
 
 #include <stdio.h>
 
@@ -42,6 +42,7 @@
 #include "stubs_health_layout.h"
 #include "stubs_heap.h"
 #include "stubs_i18n.h"
+#include "stubs_imaging.h"
 #include "stubs_ios_notif_pref_db.h"
 #include "stubs_layer.h"
 #include "stubs_light.h"

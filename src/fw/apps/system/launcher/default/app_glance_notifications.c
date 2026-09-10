@@ -11,11 +11,9 @@
 #include "pbl/services/notifications/notification_storage.h"
 #include "pbl/services/timeline/attribute.h"
 #include "system/passert.h"
-#include "util/attributes.h"
-#include "util/string.h"
-#include "util/struct.h"
-
-#include <stdio.h>
+#include "pbl/util/attributes.h"
+#include "pbl/util/string.h"
+#include "pbl/util/struct.h"
 
 typedef struct LauncherAppGlanceNotifications {
   char title[APP_NAME_SIZE_BYTES];

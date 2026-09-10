@@ -3,9 +3,7 @@
 
 #pragma once
 
-#include "util/attributes.h"
-
-#include <stdbool.h>
+#include "pbl/util/attributes.h"
 
 //! Shut down system services but don't actually reset.
 void system_reset_prepare(void);

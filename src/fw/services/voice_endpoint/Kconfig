@@ -3,6 +3,7 @@
 
 config SERVICE_VOICE_ENDPOINT
     bool "Voice endpoint"
+    select SPEEX
     help
       Voice endpoint (phone-side voice transport).
 
@@ -10,6 +11,6 @@ if SERVICE_VOICE_ENDPOINT
 
 module = SERVICE_VOICE_ENDPOINT
 module-str = Voice endpoint
-source "src/fw/Kconfig.template.log_level"
+source "subsys/logging/Kconfig.template.log_level"
 
 endif

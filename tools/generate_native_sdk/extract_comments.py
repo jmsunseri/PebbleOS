@@ -64,14 +64,14 @@ def scan_file_content_for_groups(content, groups):
                     group_comment = ""
             elif block_end_re.search(line) is not None:
                 if len(group_stack) == 0:
-                    raise Exception("Unbalanced groups!")
+                    raise RuntimeError("Unbalanced groups!")
 
                 group_stack.pop()
             elif in_group_description:
                 group_comment += line + "\n"
 
     if len(group_stack) != 0:
-        raise Exception("Unbalanced groups!")
+        raise RuntimeError("Unbalanced groups!")
 
 
 def scan_file_content_for_defines(content, defines):
@@ -108,7 +108,7 @@ def test_handle_macro():
 #define TEST "nosetests"
 """
 
-    class TestDefine(object):
+    class TestDefine:
         def __init__(self, name):
             self.name = name
             self.comment = None
@@ -122,11 +122,9 @@ def test_handle_macro():
 
     scan_file_content_for_defines(test_input, defines)
 
-    from nose.tools import eq_
-
-    eq_(defines[0].comment, "//! This is a documented MACRO")
-    eq_(defines[1].comment, "//! This is a documented define")
-    eq_(defines[2].comment, "//! This is a multiline\n//! documented define.")
+    assert defines[0].comment == "//! This is a documented MACRO"
+    assert defines[1].comment == "//! This is a documented define"
+    assert defines[2].comment == "//! This is a multiline\n//! documented define."
     assert defines[3].comment is None
 
 

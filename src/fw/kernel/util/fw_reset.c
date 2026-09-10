@@ -11,10 +11,9 @@
 #include "kernel/util/factory_reset.h"
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/runlevel.h"
-#include "pbl/services/system_task.h"
 #include "process_management/app_manager.h"
 #include "system/bootbits.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "system/reset.h"
 
@@ -69,7 +68,7 @@ void reset_protocol_msg_callback(CommSession *session, const uint8_t* data, unsi
       break;
 
     case ResetCmdCoreDump:
-      PBL_LOG_INFO("Core dump + Reboot triggered");
+      PBL_LOG_WRN("Core dump + Reboot triggered");
       core_dump_reset(true /* force overwrite any existing core dump */);
       break;
 

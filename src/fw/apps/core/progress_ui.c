@@ -5,9 +5,7 @@
 
 #include "applib/app.h"
 #include "applib/app_timer.h"
-#include "applib/graphics/gpath_builder.h"
 #include "applib/graphics/graphics.h"
-#include "util/trig.h"
 #include "applib/ui/dialogs/dialog.h"
 #include "applib/ui/dialogs/simple_dialog.h"
 #include "applib/ui/layer.h"
@@ -22,12 +20,9 @@
 #include "resource/resource_ids.auto.h"
 #include "pbl/services/firmware_update.h"
 #include "pbl/services/i18n/i18n.h"
-#include "system/logging.h"
-#include "system/passert.h"
+#include <pbl/logging/logging.h>
 
 #include <stdio.h>
-#include <string.h>
-
 
 #define UPDATE_FREQ_MS 1000
 #define FAIL_SCREEN_VISIBLE_DURATION_MS 10000

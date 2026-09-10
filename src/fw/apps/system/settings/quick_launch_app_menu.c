@@ -8,20 +8,15 @@
 #include "quick_launch_app_menu.h"
 #include "quick_launch_setup_menu.h"
 #include "quick_launch.h"
-#include "menu.h"
 #include "option_menu.h"
 
-#include "applib/graphics/graphics.h"
-#include "applib/graphics/text.h"
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/option_menu_window.h"
-#include "applib/ui/window_stack.h"
 #include "kernel/pbl_malloc.h"
 #include "pbl/services/i18n/i18n.h"
 #include "process_management/app_install_manager.h"
 #include "apps/system/timeline/timeline.h"
 #include "process_management/app_menu_data_source.h"
-#include "resource/resource_ids.auto.h"
 #include "shell/prefs.h"
 
 typedef struct {
@@ -39,9 +34,9 @@ typedef struct {
 
 static bool prv_app_filter_callback(struct AppMenuDataSource *source, AppInstallEntry *entry) {
   QuickLaunchAppMenuData *data = (QuickLaunchAppMenuData *)source->callback_context;
-  const Uuid timeline_uuid = TIMELINE_UUID_INIT;
+  const Uuid timeline_future_uuid = TIMELINE_UUID_INIT;
   const Uuid timeline_past_uuid = TIMELINE_PAST_UUID_INIT;
-  const Uuid health_uuid = UUID_HEALTH_DATA_SOURCE;
+  const Uuid timeline_full_uuid = TIMELINE_FULL_UUID_INIT;
   
   if (app_install_entry_is_watchface(entry)) {
     return false; // Skip watchfaces
@@ -54,23 +49,21 @@ static bool prv_app_filter_callback(struct AppMenuDataSource *source, AppInstall
   // For tap buttons, filter Timeline apps based on button
   if (data->is_tap) {
     if (data->button == BUTTON_ID_UP) {
-      // Tap Up: Only show Timeline Past, hide Timeline Future
-      if (uuid_equal(&entry->uuid, &timeline_uuid)) {
+      // Tap Up: Only show Timeline Past, hide Timeline Future and Timeline Full
+      if (uuid_equal(&entry->uuid, &timeline_future_uuid)) {
+        return false;
+      }
+      if (uuid_equal(&entry->uuid, &timeline_full_uuid)) {
         return false;
       }
     } else if (data->button == BUTTON_ID_DOWN) {
-      // Tap Down: Only show Timeline Future, hide Timeline Past
+      // Tap Down: Only show Timeline Future, hide Timeline Past and Timeline Full
       if (uuid_equal(&entry->uuid, &timeline_past_uuid)) {
         return false;
       }
-      // We also only want the Health app for Tap Up
-      if (uuid_equal(&entry->uuid, &health_uuid)) {
+      if (uuid_equal(&entry->uuid, &timeline_full_uuid)) {
         return false;
       }
-    } else {
-        if (uuid_equal(&entry->uuid, &health_uuid)) {
-          return false;
-        }
     }
   }
   

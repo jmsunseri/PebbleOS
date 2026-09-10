@@ -14,14 +14,13 @@
 #include "kernel/pbl_malloc.h"
 #include "pbl/services/bluetooth/bluetooth_persistent_storage.h"
 #include "pbl/services/bluetooth/ble_hrm.h"
-#include "system/hexdump.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include <bluetooth/gap_le_connect.h>
 #include <bluetooth/pebble_pairing_service.h>
-#include <btutil/bt_device.h>
-#include <btutil/sm_util.h>
+#include <pbl/btutil/bt_device.h>
+#include <pbl/btutil/sm_util.h>
 
 PBL_LOG_MODULE_DECLARE(bt, CONFIG_BT_LOG_LEVEL);
 
@@ -451,7 +450,7 @@ void bt_driver_handle_le_connection_complete_event(const BleConnectionCompleteEv
         // There is no connection intent from our end. This could be the phone that is connecting
         // for the first time. Let the connection watchdog (TODO: PBL-11236) take care of
         // disconnecting at some point, if the connection ends up being unused.
-        PBL_LOG_INFO("No intent for connection");
+        PBL_LOG_WRN("No intent for connection");
         bluetooth_analytics_handle_no_intent_for_connection();
       }
 
@@ -599,7 +598,8 @@ void bt_driver_handle_le_encryption_change_event(const BleEncryptionChange *even
   connection->is_encrypted = true;
 
   if (!local_is_master) {
-    PBL_LOG_INFO("LE encryption change: encrypted");
+    // The driver already logs encryption changes (status/encrypted/bonded)
+    PBL_LOG_DBG("LE encryption change: encrypted");
     bluetooth_analytics_handle_encryption_change();
     bt_driver_pebble_pairing_service_handle_status_change(connection);
   }
@@ -855,10 +855,12 @@ static BTErrno prv_register_intent(struct RegisterIntentRequest *request,
   if (request->is_bonding_based) {
     const GAPLEConnection *connection = gap_le_connection_find_by_irk(&request->bonding.irk);
     if (!connection) {
-      if (sm_is_pairing_info_irk_not_used(&request->bonding.irk)) {
-        PBL_LOG_DBG("register_intent: IRK not used, searching by addr");
-        connection = gap_le_connection_by_device(&request->bonding.device);
-      }
+      // The connection may not have an IRK yet: right after pairing, the
+      // bonding change handlers (which get here) can run before the driver
+      // delivers the IRK update. The connection address has already been
+      // updated to the identity address by then, so match by address too.
+      PBL_LOG_DBG("register_intent: no IRK match, searching by addr");
+      connection = gap_le_connection_by_device(&request->bonding.device);
     }
     if (connection) {
       is_already_connected = true;
@@ -1009,6 +1011,7 @@ void gap_le_connect_handle_bonding_change(BTBondingID bonding_id, BtPersistBondi
                                               &updated_bonding.device, NULL)) {
       WTF;
     }
+    updated_bonding.id = bonding_id;
   }
 
   bt_lock();

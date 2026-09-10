@@ -1,11 +1,9 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/qemu/qemu_settings.h"
+#include <pbl/drivers/qemu/qemu_settings.h>
 #include "system/passert.h"
 
-#include <stdarg.h>
-#include <stdbool.h>
 #include <stdio.h>
 
 #include "board/board.h"

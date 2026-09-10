@@ -4,9 +4,7 @@
 #include "applib/graphics/framebuffer.h"
 
 #include "applib/graphics/gtypes.h"
-#include "system/logging.h"
 #include "system/passert.h"
-#include "util/bitset.h"
 
 #include <stdint.h>
 #include <string.h>

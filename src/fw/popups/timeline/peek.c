@@ -13,11 +13,8 @@
 #include "kernel/ui/kernel_ui.h"
 #include "kernel/ui/modals/modal_manager.h"
 #include "shell/prefs.h"
-#include "syscall/syscall_internal.h"
-#include "system/logging.h"
-#include "system/passert.h"
-#include "util/size.h"
-#include "util/struct.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/size.h"
 
 #include <pebbleos/cron.h>
 

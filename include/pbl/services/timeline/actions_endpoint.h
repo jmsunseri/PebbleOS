@@ -7,10 +7,7 @@
 #include "item.h"
 
 #include "pbl/services/comm_session/session.h"
-#include "util/uuid.h"
-
-#include <inttypes.h>
-#include <stdlib.h>
+#include "pbl/util/uuid.h"
 
 //! Sends a request to the phone asking it to invoke an action
 //! @param id UUID of the pin/notification

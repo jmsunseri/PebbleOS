@@ -5,24 +5,20 @@
 #include "applib/health_service.h"
 #include "kernel/events.h"
 #include "kernel/pbl_malloc.h"
-#include "os/mutex.h"
-#include "os/tick.h"
+#include "pbl/kernel/mutex.h"
 #include "pbl/services/protobuf_log/protobuf_log.h"
 #include "syscall/syscall.h"
 #include "syscall/syscall_internal.h"
-#include "system/hexdump.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/base64.h"
-#include "util/math.h"
-#include "util/size.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
 #include "util/stats.h"
 #include "util/units.h"
 
 #include "pbl/services/activity/activity.h"
 #include "pbl/services/activity/activity_algorithm.h"
 #include "pbl/services/activity/activity_calculators.h"
-#include "pbl/services/activity/activity_insights.h"
 #include "pbl/services/activity/activity_private.h"
 
 PBL_LOG_MODULE_DECLARE(service_activity, CONFIG_SERVICE_ACTIVITY_LOG_LEVEL);
@@ -150,16 +146,16 @@ void activity_metrics_prv_get_metric_info(ActivityMetric metric, ActivityMetricI
 
 
 // ----------------------------------------------------------------------------------------------
-// Set the value of a given metric
-// The current value will only be overridden if the new value is higher
-// Historical values can be overridden with any value
-void activity_metrics_prv_set_metric(ActivityMetric metric, DayInWeek wday, int32_t value) {
+// Set the value of a given metric.
+// For the current day the cached value is only overridden when `force` is true or the new value is
+// higher than the current one. Historical values can be overridden with any value.
+static void prv_set_metric(ActivityMetric metric, DayInWeek wday, int32_t value, bool force) {
   if (!activity_tracking_on()) {
     return;
   }
 
   ActivityState *state = activity_private_state();
-  mutex_lock_recursive(state->mutex);
+  pbl_mutex_lock(&state->mutex, PBL_FOREVER);
 
   switch (metric) {
     case ActivityMetricActiveSeconds:
@@ -181,11 +177,11 @@ void activity_metrics_prv_set_metric(ActivityMetric metric, DayInWeek wday, int3
   bool current_value_updated = false;
 
   if (cur_wday == wday) {
-    // Update our cached copy of the value if it is larger than what we currently have
-    if (m_info.value_p && value > *m_info.value_p) {
+    // Update our cached copy of the value when forced, or if it is larger than what we have
+    if (m_info.value_p && (force || value > (int32_t)*m_info.value_p)) {
       *m_info.value_p = value;
       current_value_updated = true;
-    } else if (m_info.value_u32p && (uint32_t)value > *m_info.value_u32p) {
+    } else if (m_info.value_u32p && (force || (uint32_t)value > *m_info.value_u32p)) {
       *m_info.value_u32p = value;
       current_value_updated = true;
     }
@@ -200,7 +196,7 @@ void activity_metrics_prv_set_metric(ActivityMetric metric, DayInWeek wday, int3
                       &history, sizeof(history));
 
     int day = positive_modulo(cur_wday - wday, DAYS_PER_WEEK);
-    if (history.values[day] != value) {
+    if ((int32_t)history.values[day] != value) {
       history.values[day] = value;
 
       settings_file_set(file, &m_info.settings_key, sizeof(m_info.settings_key),
@@ -232,7 +228,23 @@ void activity_metrics_prv_set_metric(ActivityMetric metric, DayInWeek wday, int3
   }
 
 unlock:
-  mutex_unlock_recursive(state->mutex);
+  pbl_mutex_unlock(&state->mutex);
+}
+
+
+// ----------------------------------------------------------------------------------------------
+// Set the value of a given metric. The current day's value is only overridden if the new value is
+// higher; historical values can be overridden with any value.
+void activity_metrics_prv_set_metric(ActivityMetric metric, DayInWeek wday, int32_t value) {
+  prv_set_metric(metric, wday, value, false /* force */);
+}
+
+
+// ----------------------------------------------------------------------------------------------
+// Force the current day's value of a metric to an exact value (may also decrease it). Intended for
+// QEMU/test injection of health data.
+void activity_metrics_set_metric_exact(ActivityMetric metric, int32_t value) {
+  prv_set_metric(metric, time_util_get_day_in_week(rtc_get_time()), value, true /* force */);
 }
 
 
@@ -242,7 +254,7 @@ unlock:
 static void NOINLINE prv_shift_history(time_t utc_now) {
   ActivityState *state = activity_private_state();
   PBL_LOG_INFO("resetting metrics for new day");
-  mutex_lock_recursive(state->mutex);
+  pbl_mutex_lock(&state->mutex, PBL_FOREVER);
   {
     SettingsFile *file = activity_private_settings_open();
     if (!file) {
@@ -278,7 +290,7 @@ static void NOINLINE prv_shift_history(time_t utc_now) {
     activity_private_settings_close(file);
   }
 unlock:
-  mutex_unlock_recursive(state->mutex);
+  pbl_mutex_unlock(&state->mutex);
 }
 
 
@@ -287,17 +299,17 @@ unlock:
 // periodically from the minute handler before we save current metrics to setting.
 static void prv_update_real_time_derived_metrics(void) {
   ActivityState *state = activity_private_state();
-  mutex_lock_recursive(state->mutex);
+  pbl_mutex_lock(&state->mutex, PBL_FOREVER);
   {
     state->step_data.distance_meters = ROUND(state->distance_mm,
                                                        MM_PER_METER);
-    ACTIVITY_LOG_DEBUG("new distance: %"PRIu16"", state->step_data.distance_meters);
+    ACTIVITY_LOG_DEBUG("new distance: %"PRIu32"", state->step_data.distance_meters);
 
     state->step_data.active_kcalories = ROUND(state->active_calories,
                                                         ACTIVITY_CALORIES_PER_KCAL);
-    ACTIVITY_LOG_DEBUG("new active kcal: %"PRIu16"", state->step_data.active_kcalories);
+    ACTIVITY_LOG_DEBUG("new active kcal: %"PRIu32"", state->step_data.active_kcalories);
   }
-  mutex_unlock_recursive(state->mutex);
+  pbl_mutex_unlock(&state->mutex);
 }
 
 
@@ -307,7 +319,7 @@ static void prv_update_real_time_derived_metrics(void) {
 // We use NOINLINE to reduce the stack requirements during the minute handler (see PBL-38130)
 static void NOINLINE prv_update_step_derived_metrics(time_t utc_sec) {
   ActivityState *state = activity_private_state();
-  mutex_lock_recursive(state->mutex);
+  pbl_mutex_lock(&state->mutex, PBL_FOREVER);
   {
     int minute_of_day = time_util_get_minute_of_day(utc_sec);
     // The "no-steps-during-sleep" logic can introduce negative steps, so make sure we clip
@@ -321,12 +333,12 @@ static void NOINLINE prv_update_step_derived_metrics(time_t utc_sec) {
     // Update the walking rate
     state->steps_per_minute = steps_in_minute;
     state->steps_per_minute_last_steps = state->step_data.steps;
-    ACTIVITY_LOG_DEBUG("new steps/minute: %"PRIu16"", state->steps_per_minute);
+    ACTIVITY_LOG_DEBUG("new steps/minute: %"PRIu32"", state->steps_per_minute);
 
     // Update the number of stepping minutes and the last active minute
     if (state->steps_per_minute >= ACTIVITY_ACTIVE_MINUTE_MIN_STEPS) {
       state->step_data.step_minutes++;
-      ACTIVITY_LOG_DEBUG("new step minutes: %"PRIu16"", state->step_data.step_minutes);
+      ACTIVITY_LOG_DEBUG("new step minutes: %"PRIu32"", state->step_data.step_minutes);
 
       // The prior minute was the most recent active one
       state->last_active_minute = time_util_minute_of_day_adjust(minute_of_day, -1);
@@ -337,10 +349,10 @@ static void NOINLINE prv_update_step_derived_metrics(time_t utc_sec) {
     state->resting_calories = activity_private_compute_resting_calories(minute_of_day);
     state->step_data.resting_kcalories = ROUND(state->resting_calories,
                                                          ACTIVITY_CALORIES_PER_KCAL);
-    ACTIVITY_LOG_DEBUG("resting kcalories: %"PRIu16"",
+    ACTIVITY_LOG_DEBUG("resting kcalories: %"PRIu32"",
                        state->step_data.resting_kcalories);
   }
-  mutex_unlock_recursive(state->mutex);
+  pbl_mutex_unlock(&state->mutex);
 }
 
 
@@ -462,7 +474,7 @@ static void prv_update_current_hr_zone(ActivityState *state) {
 // Called periodically from the minute handler to update the median HR and time spent in HR zones
 static void prv_update_hr_derived_metrics(void) {
   ActivityState *state = activity_private_state();
-  mutex_lock_recursive(state->mutex);
+  pbl_mutex_lock(&state->mutex, PBL_FOREVER);
   {
     // Update the median HR / HR weight for the minute
     prv_update_median_hr_bpm(state);
@@ -470,7 +482,7 @@ static void prv_update_hr_derived_metrics(void) {
     // Update our current HR zone (based on the median which is calculated above)
     prv_update_current_hr_zone(state);
   }
-  mutex_unlock_recursive(state->mutex);
+  pbl_mutex_unlock(&state->mutex);
 }
 
 // ------------------------------------------------------------------------------------------
@@ -570,7 +582,7 @@ void activity_metrics_prv_get_median_hr_bpm(int32_t *median_out,
 // --------------------------------------------------------------------------------------------
 void activity_metrics_prv_reset_hr_stats(void) {
   ActivityState *state = activity_private_state();
-  mutex_lock_recursive(state->mutex);
+  pbl_mutex_lock(&state->mutex, PBL_FOREVER);
   {
     state->hr.num_samples = 0;
     state->hr.num_good_quality_samples = 0;
@@ -581,25 +593,25 @@ void activity_metrics_prv_reset_hr_stats(void) {
     state->hr.metrics.previous_median_bpm = 0;
     state->hr.metrics.previous_median_total_weight_x100 = 0;
   }
-  mutex_unlock_recursive(state->mutex);
+  pbl_mutex_unlock(&state->mutex);
 }
 
 // --------------------------------------------------------------------------------------------
 void activity_metrics_prv_set_hrm_worn_status(time_t now_utc, bool is_offwrist) {
   ActivityState *state = activity_private_state();
-  mutex_lock_recursive(state->mutex);
+  pbl_mutex_lock(&state->mutex, PBL_FOREVER);
   {
     state->hr.last_quality_event_utc = now_utc;
     state->hr.last_quality_was_offwrist = is_offwrist;
   }
-  mutex_unlock_recursive(state->mutex);
+  pbl_mutex_unlock(&state->mutex);
 }
 
 // --------------------------------------------------------------------------------------------
 bool activity_metrics_prv_is_hrm_offwrist(time_t now_utc) {
   ActivityState *state = activity_private_state();
   bool offwrist = false;
-  mutex_lock_recursive(state->mutex);
+  pbl_mutex_lock(&state->mutex, PBL_FOREVER);
   {
     if (state->hr.last_quality_event_utc != 0 &&
         state->hr.last_quality_was_offwrist &&
@@ -607,7 +619,7 @@ bool activity_metrics_prv_is_hrm_offwrist(time_t now_utc) {
       offwrist = true;
     }
   }
-  mutex_unlock_recursive(state->mutex);
+  pbl_mutex_unlock(&state->mutex);
   return offwrist;
 }
 
@@ -615,7 +627,7 @@ bool activity_metrics_prv_is_hrm_offwrist(time_t now_utc) {
 void activity_metrics_prv_add_median_hr_sample(PebbleHRMEvent *hrm_event, time_t now_utc,
                                                time_t now_uptime) {
   ActivityState *state = activity_private_state();
-  mutex_lock_recursive(state->mutex);
+  pbl_mutex_lock(&state->mutex, PBL_FOREVER);
   {
     // Update stats used for computing the average
     if (hrm_event->bpm.bpm > 0) {
@@ -644,7 +656,7 @@ void activity_metrics_prv_add_median_hr_sample(PebbleHRMEvent *hrm_event, time_t
     state->hr.metrics.current_quality = hrm_event->bpm.quality;
     state->hr.metrics.current_update_time_utc = now_utc;
   }
-  mutex_unlock_recursive(state->mutex);
+  pbl_mutex_unlock(&state->mutex);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -729,7 +741,7 @@ bool activity_get_metric(ActivityMetric metric, uint32_t history_len, int32_t *h
     history[i] = -1;
   }
 
-  mutex_lock_recursive(state->mutex);
+  pbl_mutex_lock(&state->mutex, PBL_FOREVER);
   {
     // Update derived metrics
     prv_update_real_time_derived_metrics();
@@ -777,7 +789,7 @@ bool activity_get_metric(ActivityMetric metric, uint32_t history_len, int32_t *h
     }
   }
 unlock:
-  mutex_unlock_recursive(state->mutex);
+  pbl_mutex_unlock(&state->mutex);
   return success;
 }
 

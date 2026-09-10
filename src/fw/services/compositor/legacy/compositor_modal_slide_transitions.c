@@ -5,12 +5,11 @@
 
 #include "pbl/services/compositor/compositor_private.h"
 
-#include "applib/graphics/bitblt.h"
 #include "applib/graphics/framebuffer.h"
 #include "applib/graphics/graphics.h"
 #include "applib/ui/animation_interpolate.h"
 #include "kernel/ui/kernel_ui.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 
 #include <string.h>
 

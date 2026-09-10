@@ -3,14 +3,14 @@
 
 #pragma once
 
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 
 #include "resource.h"
 #include "resource_storage.h"
 
 //! @file resource_storage_impl.h
 //!
-//! Shared functionality that all the different ResourceStoreImplemention's need.
+//! Shared functionality that all the different ResourceStoreImplementation's need.
 
 // TODO PBL-21382: Abstract these details out of the resource storage implementation.
 

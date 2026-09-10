@@ -17,13 +17,13 @@
 
 #include "pbl/services/music_internal.h"
 
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/hexdump.h"
 #include "system/passert.h"
-#include "util/likely.h"
+#include "pbl/util/likely.h"
 #include "util/time/time.h"
 
-#include <btutil/bt_device.h>
+#include <pbl/btutil/bt_device.h>
 
 #include <string.h>
 
@@ -301,6 +301,13 @@ static MusicPlayState prv_music_playstate_for_ams_playback_state(int32_t ams_pla
 
 static bool prv_handle_player_playback_info_value(const char *value, uint32_t value_length,
                                                   uint32_t idx, void *context) {
+  // Non-Apple AMS servers can format the floats with a comma decimal separator
+  // (e.g. "1,00"), yielding extra CSV fields. Stop parsing instead of
+  // asserting; the caller rejects the update based on the field count.
+  if (idx > AMSPlaybackInfoIdxElapsedTime) {
+    return false /* should_continue */;
+  }
+
   // Default to -1 for playback state, or 0 otherwise, in case "value" is an empty string:
   // This will cause the playback state to be set to MusicPlayStateUnknown.
   int32_t value_out = (idx == AMSPlaybackInfoIdxState) ? -1 : 0;
@@ -602,7 +609,7 @@ void ams_handle_subscribe(BLECharacteristic subscribed_characteristic,
     PBL_LOG_ERR("Failed to subscribe AMS");
     return;
   }
-  PBL_LOG_INFO("Hurray! AMS subscribed");
+  PBL_LOG_INFO("AMS subscribed");
   if (!prv_set_connected(true)) {
     PBL_LOG_ERR("Another music service was already connected. Aborting AMS setup.");
     return;

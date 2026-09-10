@@ -2,13 +2,13 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "board/board.h"
-#include "drivers/backlight.h"
+#include <pbl/drivers/backlight.h>
 #include "process_management/pebble_process_md.h"
 #include "pbl/services/activity/activity.h"
 #include "pbl/services/timeline/peek.h"
 #include "resource/resource_ids.auto.h"
 #include "shell/prefs.h"
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 
 #include <stdlib.h>
 
@@ -19,6 +19,12 @@ void app_idle_timeout_refresh(void) {
 }
 
 void app_idle_timeout_stop(void) {
+}
+
+void app_idle_timeout_touch_down(void) {
+}
+
+void app_idle_timeout_touch_up(void) {
 }
 
 void watchface_start_low_power(bool enable) {
@@ -72,6 +78,14 @@ bool touch_is_globally_enabled(void) {
 }
 
 void touch_set_globally_enabled(bool enable) {
+}
+
+
+bool touch_navigation_menu_is_enabled(void) {
+  return false;
+}
+
+void touch_set_navigation_menu_enabled(bool enable) {
 }
 
 #include "process_management/app_install_types.h"

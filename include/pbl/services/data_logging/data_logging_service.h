@@ -4,7 +4,7 @@
 #pragma once
 
 #include "applib/data_logging.h"
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 #include "kernel/pebble_tasks.h"
 
 //! This can be helpful when debugging. It changes the behavior of data logging to send any
@@ -26,7 +26,7 @@ typedef enum {
   DlsSystemTagActivityAccelSamples = 82,
   DlsSystemTagActivitySession = 84,
   DlsSystemTagProtobufLogSession = 85,
-  DlsSystemTagMemfaultChunksSession = 86,
+  // Tag 86 is retired; do not reuse.
   DlsSystemTagAnalyticsNativeHeartbeat = 87,
 } DlsSystemTag;
 

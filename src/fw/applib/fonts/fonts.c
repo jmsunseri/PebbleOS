@@ -6,16 +6,14 @@
 
 #include "applib/applib_malloc.auto.h"
 #include "applib/applib_resource.h"
-#include "applib/graphics/text.h"
 #include "applib/graphics/text_resources.h"
 #include "process_management/app_manager.h"
 #include "resource/resource.h"
 #include "resource/resource_ids.auto.h"
 #include "syscall/syscall.h"
 #include "system/passert.h"
-#include "system/logging.h"
-#include "util/list.h"
-#include "util/size.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/size.h"
 
 #include <string.h>
 
@@ -104,7 +102,7 @@ static const struct {
   const char *key_name;
   uint8_t height;
 } s_emoji_fonts[] = {
-    // Keep this sorted in descending order
+    // Keep this sorted in descending order: lookup returns the first entry that fits
   { FONT_KEY_GOTHIC_28_EMOJI, 28 },
   { FONT_KEY_GOTHIC_24_EMOJI, 24 },
   { FONT_KEY_GOTHIC_18_EMOJI, 18 },
@@ -112,12 +110,16 @@ static const struct {
 };
 
 FontInfo *fonts_get_system_emoji_font_for_size(unsigned int font_height) {
+  // Pick the largest emoji font that still fits the requested height, skipping any that fails
+  // to load so a smaller one can still be used
   for (uint32_t i = 0; i < ARRAY_LENGTH(s_emoji_fonts); i++) {
-    if (font_height == s_emoji_fonts[i].height) {
-      return sys_font_get_system_font(s_emoji_fonts[i].key_name);
+    if (s_emoji_fonts[i].height <= font_height) {
+      FontInfo *font = sys_font_get_system_font(s_emoji_fonts[i].key_name);
+      if (font) {
+        return font;
+      }
     }
   }
-  // Didn't find a suitable emoji font
   return NULL;
 }
 #endif

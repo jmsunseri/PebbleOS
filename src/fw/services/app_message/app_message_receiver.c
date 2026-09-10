@@ -9,8 +9,8 @@
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/comm_session/session_receive_router.h"
 #include "pbl/services/app_inbox_service.h"
-#include "system/logging.h"
-#include "util/math.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/math.h"
 
 #include <stdint.h>
 
@@ -90,7 +90,7 @@ static Receiver *prv_app_message_receiver_prepare(CommSession *session,
   rcv->header_bytes_remaining = header_bytes_remaining;
 
   // Always forward the header to default system receiver as well, we'll cancel it later on if the
-  // message was written succesfully to the app inbox.
+  // message was written successfully to the app inbox.
   if (!prv_fwd_prepare(rcv, session, header_bytes_remaining)) {
     kernel_free(rcv);
     return NULL;

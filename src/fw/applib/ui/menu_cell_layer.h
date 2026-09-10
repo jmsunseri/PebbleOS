@@ -9,7 +9,6 @@
 #include "applib/graphics/text.h"
 
 #include <stdint.h>
-#include <stddef.h>
 
 //! @file menu_layer.h
 //! @addtogroup UI
@@ -17,6 +16,7 @@
 //!   @addtogroup Layer Layers
 //!   @{
 //!     @addtogroup MenuLayer
+//!   @{
 
 //! @internal
 //! TODO: PBL-21467 Implement MenuCellLayer

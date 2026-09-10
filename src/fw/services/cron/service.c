@@ -4,24 +4,48 @@
 #include "pbl/services/cron.h"
 #include <pebbleos/cron.h>
 
-#include "os/mutex.h"
+#include <pbl/drivers/rtc.h>
+#include "pbl/kernel/mutex.h"
+#include "pbl/services/new_timer/new_timer.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "pbl/services/regular_timer.h"
-#include "system/logging.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 
 PBL_LOG_MODULE_DEFINE(service_cron, CONFIG_SERVICE_CRON_LOG_LEVEL);
 
 //! Don't let users modify the list while callbacks are occurring.
-static PebbleMutex *s_list_mutex = NULL;
-
-static void prv_timer_callback(void* data);
-static RegularTimerInfo s_regular = {
-  .cb = prv_timer_callback,
-};
+static PBL_MUTEX_DEFINE(s_list_mutex);
 
 // List of jobs sorted from soonest to farthest.
 static ListNode *s_scheduled_jobs;
+
+static void prv_timer_callback(void* data);
+
+//! One-shot timer armed for the next job's execute time. Re-armed after every
+//! list mutation and every firing; stopped when no jobs are scheduled. Capped
+//! so that long sleeps re-check at least hourly, which keeps any tick-clock
+//! drift across sleep bounded.
+#define CRON_MAX_ARM_INTERVAL_S (60 * 60)
+static TimerID s_wakeup_timer = TIMER_INVALID_ID;
+
+//! Arm (or stop) the wakeup timer for the head job. s_list_mutex must be held.
+static void prv_arm_wakeup(void) {
+  if (s_scheduled_jobs == NULL) {
+    new_timer_stop(s_wakeup_timer);
+    return;
+  }
+  time_t now;
+  uint16_t milliseconds;
+  rtc_get_time_ms(&now, &milliseconds);
+  const time_t execute_time = ((CronJob *)s_scheduled_jobs)->cached_execute_time;
+  int32_t delta_s = (execute_time > now) ? (int32_t)(execute_time - now) : 0;
+  delta_s = MIN(delta_s, CRON_MAX_ARM_INTERVAL_S);
+  uint32_t timeout_ms = (uint32_t)delta_s * 1000U;
+  if (timeout_ms > milliseconds) {
+    timeout_ms -= milliseconds;
+  }
+  new_timer_start(s_wakeup_timer, timeout_ms, prv_timer_callback, NULL, 0 /*flags*/);
+}
 
 // -------------------------------------------------------------------------------------------
 static bool prv_is_scheduled(CronJob *job) {
@@ -37,7 +61,7 @@ static int prv_sort(void *a, void *b) {
 
 // -------------------------------------------------------------------------------------------
 static void prv_timer_callback(void* data) {
-  mutex_lock(s_list_mutex);
+  pbl_mutex_lock(&s_list_mutex, PBL_FOREVER);
   while (s_scheduled_jobs != NULL &&
          ((CronJob*)s_scheduled_jobs)->cached_execute_time <= rtc_get_time()) {
     CronJob *job = (CronJob*)s_scheduled_jobs;
@@ -45,16 +69,17 @@ static void prv_timer_callback(void* data) {
     s_scheduled_jobs = list_pop_head(s_scheduled_jobs);
 
     // Release the mutex while we execute the callback
-    mutex_unlock(s_list_mutex);
+    pbl_mutex_unlock(&s_list_mutex);
     job->cb(job, job->cb_data);
-    mutex_lock(s_list_mutex);
+    pbl_mutex_lock(&s_list_mutex, PBL_FOREVER);
   }
-  mutex_unlock(s_list_mutex);
+  prv_arm_wakeup();
+  pbl_mutex_unlock(&s_list_mutex);
 }
 
 // --------------------------------------------------------------------------------------------
 void cron_service_handle_clock_change(PebbleSetTimeEvent *set_time_info) {
-  mutex_lock(s_list_mutex);
+  pbl_mutex_lock(&s_list_mutex, PBL_FOREVER);
 
   const bool must_recalc = set_time_info->gmt_offset_delta != 0 || set_time_info->dst_changed;
   // Because it's ABS, it'll be unsigned. This makes the compiler behave.
@@ -69,14 +94,14 @@ void cron_service_handle_clock_change(PebbleSetTimeEvent *set_time_info) {
     if (must_recalc || change_diff >= job->clock_change_tolerance) {
       job->cached_execute_time = cron_job_get_execute_time(job);
     }
-    PBL_LOG_INFO("Cron job rescheduled for %ld", job->cached_execute_time);
+    PBL_LOG_DBG("Cron job rescheduled for %ld", job->cached_execute_time);
 
     newlist = list_sorted_add(newlist, &job->list_node, prv_sort, true);
   }
   // Then move it back to the static
   s_scheduled_jobs = newlist;
 
-  mutex_unlock(s_list_mutex);
+  pbl_mutex_unlock(&s_list_mutex);
 
   // We want to run any tasks we've skipped over.
   prv_timer_callback(NULL);
@@ -84,19 +109,16 @@ void cron_service_handle_clock_change(PebbleSetTimeEvent *set_time_info) {
 
 // --------------------------------------------------------------------------------------------
 void cron_service_init(void) {
-  PBL_ASSERTN(s_list_mutex == NULL);
-
-  s_list_mutex = mutex_create();
   s_scheduled_jobs = NULL;
 
-  regular_timer_add_seconds_callback(&s_regular);
+  if (s_wakeup_timer == TIMER_INVALID_ID) {
+    s_wakeup_timer = new_timer_create();
+  }
 }
 
 // -------------------------------------------------------------------------------------------
 time_t cron_job_schedule(CronJob *job) {
-  PBL_ASSERTN(s_list_mutex);
-
-  mutex_lock(s_list_mutex);
+  pbl_mutex_lock(&s_list_mutex, PBL_FOREVER);
 
   const time_t now = rtc_get_time();
   // Always update the execution time.
@@ -108,16 +130,15 @@ time_t cron_job_schedule(CronJob *job) {
   PBL_LOG_DBG("Cron job scheduled for %ld (%+ld)", job->cached_execute_time,
           (job->cached_execute_time - now));
 
-  mutex_unlock(s_list_mutex);
+  prv_arm_wakeup();
+  pbl_mutex_unlock(&s_list_mutex);
 
   return job->cached_execute_time;
 }
 
 // ------------------------------------------------------------------------------------------
 time_t cron_job_schedule_after(CronJob *job, CronJob *new_job) {
-  PBL_ASSERTN(s_list_mutex);
-
-  mutex_lock(s_list_mutex);
+  pbl_mutex_lock(&s_list_mutex, PBL_FOREVER);
 
   // can't schedule an already scheduled job
   PBL_ASSERTN(!prv_is_scheduled(new_job));
@@ -135,34 +156,33 @@ time_t cron_job_schedule_after(CronJob *job, CronJob *new_job) {
   list_insert_after(&job->list_node, &new_job->list_node);
   PBL_LOG_DBG("Cron job scheduled for %ld", job->cached_execute_time);
 
-  mutex_unlock(s_list_mutex);
+  prv_arm_wakeup();
+  pbl_mutex_unlock(&s_list_mutex);
 
   return job->cached_execute_time;
 }
 
 // ------------------------------------------------------------------------------------------
 bool cron_job_is_scheduled(CronJob *job) {
-  PBL_ASSERTN(s_list_mutex);
-
-  mutex_lock(s_list_mutex);
+  pbl_mutex_lock(&s_list_mutex, PBL_FOREVER);
   bool rv = prv_is_scheduled(job);
-  mutex_unlock(s_list_mutex);
+  pbl_mutex_unlock(&s_list_mutex);
 
   return (rv);
 }
 
 // ------------------------------------------------------------------------------------------
 bool cron_job_unschedule(CronJob *job) {
-  PBL_ASSERTN(s_list_mutex);
   bool removed = false;
-  mutex_lock(s_list_mutex);
+  pbl_mutex_lock(&s_list_mutex, PBL_FOREVER);
 
   if (prv_is_scheduled(job)) {
     list_remove(&job->list_node, &s_scheduled_jobs, NULL);
     removed = true;
+    prv_arm_wakeup();
   }
 
-  mutex_unlock(s_list_mutex);
+  pbl_mutex_unlock(&s_list_mutex);
   return removed;
 }
 
@@ -171,7 +191,7 @@ bool cron_job_unschedule(CronJob *job) {
 // For Testing:
 
 void cron_clear_all_jobs(void) {
-  mutex_lock(s_list_mutex);
+  pbl_mutex_lock(&s_list_mutex, PBL_FOREVER);
 
   // Iterate over all the jobs to remove them all.
   for (ListNode* iter = s_scheduled_jobs; iter != NULL; ) {
@@ -181,24 +201,22 @@ void cron_clear_all_jobs(void) {
     list_remove(&job->list_node, NULL, NULL);
   }
   s_scheduled_jobs = NULL;
+  prv_arm_wakeup();
 
-  mutex_unlock(s_list_mutex);
+  pbl_mutex_unlock(&s_list_mutex);
 }
 
 void cron_service_deinit(void) {
   cron_clear_all_jobs();
 
-  mutex_destroy(s_list_mutex);
-  s_list_mutex = NULL;
-
-  regular_timer_remove_callback(&s_regular);
+  new_timer_stop(s_wakeup_timer);
 }
 
 uint32_t cron_service_get_job_count(void) {
   uint32_t count = 0;
-  mutex_lock(s_list_mutex);
+  pbl_mutex_lock(&s_list_mutex, PBL_FOREVER);
   count = list_count(s_scheduled_jobs);
-  mutex_unlock(s_list_mutex);
+  pbl_mutex_unlock(&s_list_mutex);
   return count;
 }
 

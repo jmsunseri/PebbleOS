@@ -1,7 +1,9 @@
 ```{raw} html
 <div style="display: none;">
 ```
+
 # PebbleOS documentation
+
 ```{raw} html
 </div>
 ```
@@ -68,26 +70,37 @@ Browse the PebbleOS sources!
 :::
 
 :::{grid-item-card}
-:link: reference/external
+:link: reference/index
 :link-type: doc
 
 📖 Reference
 ^^^
 
-Learn more about PebbleOS: podcasts, developer documents and more!
+Look things up: protocol specifications, podcasts, developer documents and more!
 :::
 
 ::::
-
 
 ```{toctree}
 :hidden:
 :caption: 🛠️ Development
 development/getting_started.md
+development/pbl.md
 development/options.md
 development/building_fw.md
+development/build_system.md
+development/testing.md
 development/qemu.md
+development/debugging.md
 development/moddable.md
+development/sdk_export.md
+development/contributing.md
+```
+
+```{toctree}
+:hidden:
+:caption: 🏛️ Architecture
+architecture/index.md
 ```
 
 ```{toctree}
@@ -98,6 +111,6 @@ boards/index.md
 
 ```{toctree}
 :hidden:
-:caption: 📖 Reference 
-reference/external.md
+:caption: 📖 Reference
+reference/index.md
 ```

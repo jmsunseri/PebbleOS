@@ -10,17 +10,11 @@
 #include "comm/ble/gap_le_connection.h"
 #include "comm/ble/gap_le_device_name.h"
 #include "comm/ble/gap_le_connect.h"
-#include "drivers/backlight.h"
 #include "mfg/mfg_info.h"
 #include "mfg/mfg_serials.h"
-#include "process_management/app_install_manager.h"
-#include "process_management/app_manager.h"
 
 #include "kernel/event_loop.h"
 #include "kernel/pbl_malloc.h"
-
-#include "system/logging.h"
-#include "system/passert.h"
 
 #include "applib/app.h"
 #include "applib/event_service_client.h"
@@ -31,10 +25,7 @@
 #include "applib/ui/text_layer.h"
 #include "applib/ui/window.h"
 #include "applib/ui/window_private.h"
-#include "applib/ui/window_stack.h"
 #include "process_state/app_state/app_state.h"
-
-#include "apps/system/settings/time.h"
 
 #include "pbl/services/bluetooth/local_id.h"
 #include "pbl/services/bluetooth/pairability.h"
@@ -199,7 +190,7 @@ static void prv_window_load(Window* window) {
                                GColorBlack, GColorWhite);
   layer_add_child(&window->layer, &qr_code->layer);
 
-#if defined(CONFIG_BOARD_FAMILY_OBELIX) || defined(CONFIG_BOARD_FAMILY_GETAFIX)
+#if defined(CONFIG_BOARD_OBELIX) || defined(CONFIG_BOARD_GETAFIX)
   const uint16_t name_height = 30;
 #else
   const uint16_t name_height = 20;
@@ -211,7 +202,7 @@ static void prv_window_load(Window* window) {
                                          PBL_IF_RECT_ELSE(name_height, name_height + 10),
                                          window->layer.bounds.size.w, name_height),
                                   NULL,
-#if defined(CONFIG_BOARD_FAMILY_OBELIX) || defined(CONFIG_BOARD_FAMILY_GETAFIX)
+#if defined(CONFIG_BOARD_OBELIX) || defined(CONFIG_BOARD_GETAFIX)
                                   fonts_get_system_font(FONT_KEY_GOTHIC_24),
 #else
                                   fonts_get_system_font(FONT_KEY_GOTHIC_14),

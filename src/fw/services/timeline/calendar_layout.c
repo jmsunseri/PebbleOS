@@ -6,23 +6,17 @@
 #include "pbl/services/timeline/timeline_layout.h"
 
 #include "applib/fonts/fonts.h"
-#include "applib/graphics/gdraw_command_transforms.h"
 #include "applib/graphics/gtypes.h"
 #include "applib/graphics/text.h"
 #include "applib/preferred_content_size.h"
 #include "applib/ui/ui.h"
-#include "board/display.h"
 #include "kernel/pbl_malloc.h"
 #include "process_state/app_state/app_state.h"
 #include "pbl/services/clock.h"
 #include "pbl/services/i18n/i18n.h"
-#include "system/logging.h"
-#include "system/hexdump.h"
-#include "util/math.h"
-#include "util/size.h"
-#include "util/string.h"
-
-#include <stdio.h>
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
+#include "pbl/util/string.h"
 
 //////////////////////////////////////////
 //  Card Mode

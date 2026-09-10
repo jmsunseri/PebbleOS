@@ -18,8 +18,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#include "util/uuid.h"
-#include "process_management/app_install_types.h"
+#include "pbl/util/uuid.h"
 #include "system/status_codes.h"
 
 typedef struct SettingsFile SettingsFile;
@@ -40,7 +39,7 @@ void persist_service_unlock_store(SettingsFile *store);
 //! Call during each process's startup.
 void persist_service_client_open(const Uuid *uuid);
 
-//! Call once after proces exits to clean it up.
+//! Call once after process exits to clean it up.
 void persist_service_client_close(const Uuid *uuid);
 
 //! Deletes the app's persist file.

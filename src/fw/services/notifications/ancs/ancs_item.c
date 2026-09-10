@@ -9,9 +9,9 @@
 #include "kernel/pbl_malloc.h"
 #include "resource/resource_storage_impl.h"
 #include "pbl/services/i18n/i18n.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "pbl/services/timeline/timeline_resources.h"
-#include "util/string.h"
+#include "pbl/util/string.h"
 
 #include <stdio.h>
 
@@ -42,6 +42,7 @@ static bool prv_should_add_sender_attr(const ANCSAttribute *app_id, const ANCSAt
           title && title->length > 0);
 }
 
+//! @param pstring The pstring to copy into the buffer
 //! @param buffer The buffer into which to copy the pstring attr. The buffer
 //! is assumed to be large enough to contain the string plus an optional
 //! ellipsis plus the zero terminator.
@@ -116,6 +117,11 @@ static int prv_set_multimedia_action_msg(char *buffer, size_t length) {
 
 //! @param buffer Pointer to a buffer large enough to hold all attribute strings required by
 //! the action. If buffer points to null, a new buffer will be allocated
+//! @param action The timeline item action to fill in
+//! @param ancs_action_id The ANCS action id (positive or negative action)
+//! @param title The ANCS title attribute of the notification
+//! @param app_id The ANCS app id attribute of the notification
+//! @param properties The ANCS properties of the notification
 //! @return Pointer to the end of the buffer (*buffer + size of strings)
 static uint8_t *prv_fill_native_ancs_action(uint8_t **buffer,
                                             TimelineItemAction *action,
@@ -434,7 +440,7 @@ TimelineItem *ancs_item_create_and_populate(ANCSAttribute *notif_attributes[],
   int num_native_actions = (positive_action ? 1 : 0) + (negative_action ? 1 : 0);
   int num_actions = num_native_actions + num_pebble_actions;
 
-  const int max_num_actions = 8; // Arbitratily chosen
+  const int max_num_actions = 8; // Arbitrarily chosen
   uint8_t attributes_per_action[max_num_actions];
   int action_idx = 0;
 

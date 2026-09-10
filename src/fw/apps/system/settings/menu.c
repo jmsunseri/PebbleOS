@@ -8,20 +8,18 @@
 #include "notifications.h"
 #include "quick_launch.h"
 #include "quiet_time.h"
-#include "remote.h"
 #include "system.h"
 #include "time.h"
 #include "timeline.h"
 #ifdef CONFIG_THEMING
 #include "themes.h"
 #endif
+#include "charging.h"
 #include "health.h"
 #include "vibe_patterns.h"
 
 #include "applib/ui/app_window_stack.h"
-#include "pbl/services/i18n/i18n.h"
 #include "system/passert.h"
-#include "shell/prefs.h"
 
 static const SettingsModuleGetMetadata s_submodule_registry[] = {
   [SettingsMenuItemBluetooth]     = settings_bluetooth_get_info,
@@ -30,6 +28,7 @@ static const SettingsModuleGetMetadata s_submodule_registry[] = {
   [SettingsMenuItemQuietTime]     = settings_quiet_time_get_info,
   [SettingsMenuItemTimeline]      = settings_timeline_get_info,
   [SettingsMenuItemHealth]        = settings_health_get_info,
+  [SettingsMenuItemCharging]      = settings_charging_get_info,
   [SettingsMenuItemActivity]      = settings_activity_tracker_get_info,
   [SettingsMenuItemQuickLaunch]   = settings_quick_launch_get_info,
   [SettingsMenuItemDateTime]      = settings_time_get_info,

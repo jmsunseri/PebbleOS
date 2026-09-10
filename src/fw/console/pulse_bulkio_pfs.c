@@ -3,13 +3,11 @@
 
 #include "pulse_bulkio_domain_handler.h"
 
-#include "console/pulse_protocol_impl.h"
-#include "kernel/pbl_malloc.h"
 #include "pbl/services/filesystem/pfs.h"
 #include "system/passert.h"
 #include "system/status_codes.h"
-#include "util/attributes.h"
-#include "util/math.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/math.h"
 
 #include <stdint.h>
 #include <string.h>

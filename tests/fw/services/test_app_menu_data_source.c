@@ -15,8 +15,8 @@
 #include "pbl/services/app_cache.h"
 #include "pbl/services/blob_db/app_db.h"
 #include "pbl/services/filesystem/pfs.h"
-#include "util/build_id.h"
-#include "util/size.h"
+#include "pbl/util/build_id.h"
+#include "pbl/util/size.h"
 #include "fixtures/load_test_resources.h"
 
 // access it directly just to test things out
@@ -63,7 +63,6 @@
 #include "stubs_process_manager.h"
 #include "stubs_prompt.h"
 #include "stubs_put_bytes.h"
-#include "stubs_queue.h"
 #include "stubs_quick_launch.h"
 #include "stubs_rand_ptr.h"
 #include "stubs_serial.h"

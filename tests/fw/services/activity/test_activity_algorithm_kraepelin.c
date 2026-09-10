@@ -3,8 +3,8 @@
 
 #include "applib/accel_service.h"
 #include "applib/data_logging.h"
-#include "drivers/ambient_light.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/ambient_light.h>
+#include <pbl/drivers/rtc.h>
 #include "pbl/services/regular_timer.h"
 #include "pbl/services/battery/battery_state.h"
 #include "pbl/services/activity/activity.h"
@@ -16,8 +16,8 @@
 #include "pbl/services/filesystem/pfs.h"
 #include "pbl/services/settings/settings_file.h"
 #include "pbl/services/system_task.h"
-#include "util/math.h"
-#include "util/size.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -28,7 +28,7 @@
 
 // Stubs
 #include "stubs_analytics.h"
-#include "stubs_freertos.h"
+#include "stubs_irq.h"
 #include "stubs_hexdump.h"
 #include "stubs_hr_util.h"
 #include "stubs_logging.h"
@@ -79,7 +79,7 @@ static struct tm s_start_time_tm = {
 
 // ============================================================================================
 // Misc stubs
-uint32_t ambient_light_get_light_level(void) {
+uint32_t light_get_ambient_lux(void) {
   return s_alg_next_light << 4;
 }
 
@@ -250,6 +250,8 @@ uint32_t kalg_state_size(void) {
 bool kalg_init(KAlgState *state, KAlgStatsCallback stats_cb) {
   return true;
 }
+
+void kalg_deinit(KAlgState *state) {}
 
 uint32_t kalg_analyze_samples(KAlgState *state, AccelRawData *data, uint32_t num_samples,
                               uint32_t *consumed_samples) {
@@ -842,9 +844,9 @@ void test_activity_algorithm_kraepelin__steps_during_sleep(void) {
   s_kalg_sleep_m = 0;
 
   activity_algorithm_metrics_changed_notification();
-  uint16_t steps_awake_60m;
-  uint16_t steps_awake_100m;
-  uint16_t steps_awake_120m;
+  uint32_t steps_awake_60m;
+  uint32_t steps_awake_100m;
+  uint32_t steps_awake_120m;
 
   // Call the minute handler, which should zero out steps that occur while sleeping
   prv_feed_minute_data(60, &minute_data[0], false /*simulate_bg_delays*/);
@@ -880,9 +882,9 @@ void test_activity_algorithm_kraepelin__steps_during_sleep(void) {
   s_kalg_sleep_m = 100;
 
   activity_algorithm_metrics_changed_notification();
-  uint16_t steps_asleep_60m;
-  uint16_t steps_asleep_100m;
-  uint16_t steps_asleep_120m;
+  uint32_t steps_asleep_60m;
+  uint32_t steps_asleep_100m;
+  uint32_t steps_asleep_120m;
 
   // Call the minute handler, which should zero out steps that occur while sleeping
   prv_feed_minute_data(60, &minute_data[0], false /*simulate_bg_delays*/);

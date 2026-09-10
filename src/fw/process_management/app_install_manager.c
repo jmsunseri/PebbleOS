@@ -11,13 +11,12 @@
 #include "applib/event_service_client.h"
 #include "apps/system_app_registry.h"
 #include "console/prompt.h"
-#include "drivers/task_watchdog.h"
+#include <pbl/drivers/task_watchdog.h>
 #include "kernel/event_loop.h"
 #include "kernel/pbl_malloc.h"
 #include "kernel/pebble_tasks.h"
 #include "kernel/util/sleep.h"
 #include "resource/resource.h"
-#include "resource/resource_ids.auto.h"
 #include "pbl/services/comm_session/app_session_capabilities.h"
 #include "pbl/services/i18n/i18n.h"
 #include "pbl/services/app_cache.h"
@@ -25,13 +24,13 @@
 #include "pbl/services/blob_db/pin_db.h"
 #include "pbl/services/persist.h"
 #include "pbl/services/process_management/app_storage.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/circular_cache.h"
-#include "util/size.h"
+#include "pbl/util/circular_cache.h"
+#include "pbl/util/size.h"
 
-#include <os/mutex.h>
-#include <util/attributes.h>
+#include "pbl/kernel/mutex.h"
+#include <pbl/util/attributes.h>
 
 typedef struct PACKED RecentApp {
   AppInstallId id;
@@ -47,7 +46,7 @@ typedef struct PACKED RecentApp {
 #define RECENT_APP_LAST_ACTIVITY_INVALID (0)
 
 typedef struct RecentAppCache {
-  PebbleRecursiveMutex *mutex;
+  struct pbl_mutex mutex;
   CircularCache cache;
   uint8_t cache_buffer[CACHE_BUFFER_SIZE];
 } RecentAppCache;
@@ -114,7 +113,7 @@ bool app_install_is_prioritized(AppInstallId install_id) {
   }
 
   bool rv = false;
-  mutex_lock_recursive(s_recent_apps.mutex);
+  pbl_mutex_lock(&s_recent_apps.mutex, PBL_FOREVER);
   {
     RecentApp *app = circular_cache_get(&s_recent_apps.cache, &install_id);
     if (app) {
@@ -128,7 +127,7 @@ bool app_install_is_prioritized(AppInstallId install_id) {
       }
     }
   }
-  mutex_unlock_recursive(s_recent_apps.mutex);
+  pbl_mutex_unlock(&s_recent_apps.mutex);
   return rv;
 }
 
@@ -137,14 +136,14 @@ void app_install_unmark_prioritized(AppInstallId install_id) {
     return;
   }
 
-  mutex_lock_recursive(s_recent_apps.mutex);
+  pbl_mutex_lock(&s_recent_apps.mutex, PBL_FOREVER);
   {
     RecentApp *app = circular_cache_get(&s_recent_apps.cache, &install_id);
     if (app) {
       app->last_activity = RECENT_APP_LAST_ACTIVITY_INVALID;
     }
   }
-  mutex_unlock_recursive(s_recent_apps.mutex);
+  pbl_mutex_unlock(&s_recent_apps.mutex);
 }
 
 void app_install_mark_prioritized(AppInstallId install_id, bool can_expire) {
@@ -152,7 +151,7 @@ void app_install_mark_prioritized(AppInstallId install_id, bool can_expire) {
     return;
   }
 
-  mutex_lock_recursive(s_recent_apps.mutex);
+  pbl_mutex_lock(&s_recent_apps.mutex, PBL_FOREVER);
   {
     const time_t cur_time = time_get_uptime_seconds();
     RecentApp *app = circular_cache_get(&s_recent_apps.cache, &install_id);
@@ -168,7 +167,7 @@ void app_install_mark_prioritized(AppInstallId install_id, bool can_expire) {
       circular_cache_push(&s_recent_apps.cache, &app);
     }
   }
-  mutex_unlock_recursive(s_recent_apps.mutex);
+  pbl_mutex_unlock(&s_recent_apps.mutex);
 }
 
 #if UNITTEST
@@ -321,7 +320,7 @@ static void prv_app_install_delete(AppInstallId id, Uuid *uuid, bool app_upgrade
   if (delete_cache) {
     // only log when we actually delete the cache entry. This is so we don't print out 100 logs
     // during an app cache clear
-    PBL_LOG_INFO("Deleting app with id %"PRId32"", id);
+    PBL_LOG_DBG("Deleting app with id %"PRId32"", id);
     app_cache_remove_entry(id);
   }
 }
@@ -565,7 +564,7 @@ static void prv_capabilities_changed_event_handler(PebbleEvent *event, void *con
 void app_install_manager_init(void) {
   circular_cache_init(&s_recent_apps.cache, s_recent_apps.cache_buffer, sizeof(RecentApp),
                       NUM_RECENT_APPS, prv_cmp_recent_apps);
-  s_recent_apps.mutex = mutex_create_recursive();
+  pbl_mutex_init(&s_recent_apps.mutex);
 
   // PBL-31769: This should be moved to send_text.c
 #if defined(APP_ID_SEND_TEXT)
@@ -614,7 +613,7 @@ static GColor prv_hard_coded_color_for_3rd_party_apps(Uuid *uuid) {
 
 
 static GColor prv_valid_color_from_uuid(GColor color, Uuid *uuid) {
-#ifdef CONFIG_BOARD_FAMILY_ASTERIX
+#ifdef CONFIG_BOARD_ASTERIX
   return GColorClear;
 #endif
 

@@ -1,26 +1,23 @@
 /* SPDX-FileCopyrightText: 2025 Joshua Jun */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/mic.h"
-#include "drivers/mic/nrf5/pdm_definitions.h"
+#include <pbl/drivers/mic.h>
+#include <pbl/drivers/mic/nrf5/pdm_definitions.h>
 
 #include "board/board.h"
-#include "drivers/clocksource.h"
+#include <pbl/drivers/clocksource.h>
 #include "kernel/events.h"
 #include "kernel/kernel_heap.h"
 #include "kernel/pbl_malloc.h"
 #include "kernel/util/sleep.h"
-#include "os/mutex.h"
+#include "pbl/kernel/mutex.h"
 #include "pbl/services/system_task.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/circular_buffer.h"
-#include "util/heap.h"
-#include "util/math.h"
-#include "util/size.h"
+#include "pbl/util/circular_buffer.h"
+#include "pbl/util/heap.h"
 #include "util/time/time.h"
 
-#include "hal/nrf_clock.h"
 #include "nrfx_pdm.h"
 
 PBL_LOG_MODULE_DEFINE(driver_mic_nrf5, CONFIG_DRIVER_MIC_LOG_LEVEL);
@@ -173,9 +170,12 @@ static void prv_process_pdm_buffer(MicDeviceState *state, int16_t *pdm_data) {
   if (available_data >= frame_size_bytes && !state->main_pending) {
     state->main_pending = true;
 
-    // Dispatch to low-priority system task instead of kernel event queue
+    // Dispatch to low-priority system task instead of kernel event queue.
+    // A drop is retried on the next PDM buffer event; losing samples beats
+    // resetting the system over a full queue.
     bool should_context_switch = false;
-    if (!system_task_add_callback_from_isr(prv_dispatch_samples_system_task, NULL, &should_context_switch)) {
+    if (!system_task_add_callback_from_isr_droppable(prv_dispatch_samples_system_task, NULL,
+                                                     &should_context_switch)) {
       state->main_pending = false;
     }
   }
@@ -231,9 +231,7 @@ void mic_init(const MicDevice *this) {
   state->pdm_config.gain_l = BOARD_CONFIG.mic_config.gain;
   state->pdm_config.gain_r = BOARD_CONFIG.mic_config.gain;
   
-  // Create mutex for thread safety
-  state->mutex = mutex_create_recursive();
-  PBL_ASSERTN(state->mutex);
+  pbl_mutex_init(&state->mutex);
   
   // Initialize PDM driver once during init
   nrfx_err_t err = nrfx_pdm_init(&this->pdm_instance, &state->pdm_config, prv_pdm_event_handler);
@@ -259,7 +257,7 @@ static void prv_dispatch_samples_system_task(void *data) {
     return;
   }
 
-  mutex_lock_recursive(state->mutex);
+  pbl_mutex_lock(&state->mutex, PBL_FOREVER);
 
   // Process a limited number of frames to provide backpressure
   // This prevents overwhelming the Bluetooth send buffer
@@ -314,7 +312,7 @@ static void prv_dispatch_samples_system_task(void *data) {
     state->main_pending = false;
   }
 
-  mutex_unlock_recursive(state->mutex);
+  pbl_mutex_unlock(&state->mutex);
 }
 
 void mic_set_volume(const MicDevice *this, uint16_t volume) {
@@ -382,17 +380,17 @@ bool mic_start(const MicDevice *this, MicDataHandlerCB data_handler, void *conte
   
   MicDeviceState *state = this->state;
   
-  mutex_lock_recursive(state->mutex);
+  pbl_mutex_lock(&state->mutex, PBL_FOREVER);
   
   if (state->is_running) {
     PBL_LOG_WRN("Microphone is already running");
-    mutex_unlock_recursive(state->mutex);
+    pbl_mutex_unlock(&state->mutex);
     return false;
   }
   
   if (!state->is_initialized) {
     PBL_LOG_ERR("Microphone not initialized");
-    mutex_unlock_recursive(state->mutex);
+    pbl_mutex_unlock(&state->mutex);
     return false;
   }
   
@@ -400,7 +398,7 @@ bool mic_start(const MicDevice *this, MicDataHandlerCB data_handler, void *conte
   // circular buffer with the actual (possibly shrunk) size.
   if (!prv_allocate_buffers(state)) {
     PBL_LOG_ERR("Failed to allocate microphone buffers");
-    mutex_unlock_recursive(state->mutex);
+    pbl_mutex_unlock(&state->mutex);
     return false;
   }
   
@@ -421,13 +419,11 @@ bool mic_start(const MicDevice *this, MicDataHandlerCB data_handler, void *conte
     state->is_running = false;  // Reset on failure    
     clocksource_hfxo_release();
     prv_free_buffers(state);
-    mutex_unlock_recursive(state->mutex);
+    pbl_mutex_unlock(&state->mutex);
     return false;
   }
-  
-  PBL_LOG_INFO("Microphone started");
-  
-  mutex_unlock_recursive(state->mutex);
+
+  pbl_mutex_unlock(&state->mutex);
   return true;
 }
 
@@ -437,10 +433,10 @@ void mic_stop(const MicDevice *this) {
   
   MicDeviceState *state = this->state;
   
-  mutex_lock_recursive(state->mutex);
+  pbl_mutex_lock(&state->mutex, PBL_FOREVER);
   
   if (!state->is_running) {
-    mutex_unlock_recursive(state->mutex);
+    pbl_mutex_unlock(&state->mutex);
     return;
   }
   
@@ -466,14 +462,11 @@ void mic_stop(const MicDevice *this) {
   state->audio_buffer = NULL;
   state->audio_buffer_len = 0;
   state->main_pending = false;
-  
-  PBL_LOG_INFO("Microphone stopped");
-  
-  mutex_unlock_recursive(state->mutex);
+
+  pbl_mutex_unlock(&state->mutex);
 }
 
 #include "console/prompt.h"
-#include "console/console_internal.h"
 
 // Console command stubs for Asterix (since we don't have accessory connector)
 // These commands are defined in the console command table but Asterix doesn't need

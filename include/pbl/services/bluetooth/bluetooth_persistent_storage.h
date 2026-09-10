@@ -7,7 +7,6 @@
 
 #include <bluetooth/bluetooth_types.h>
 #include <bluetooth/bonding_sync.h>
-#include <bluetooth/id.h>
 #include <bluetooth/sm_types.h>
 
 //! @file bluetooth_persistent_storage.h
@@ -81,7 +80,7 @@ bool bt_persistent_storage_has_ble_ancs_bonding(void);
 bool bt_persistent_storage_has_active_ble_gateway_bonding(void);
 
 //! Runs the callback for each BLE pairing
-//! The callback is NOT allowed to aquire the bt_lock() (or we could deadlock).
+//! The callback is NOT allowed to acquire the bt_lock() (or we could deadlock).
 void bt_persistent_storage_for_each_ble_pairing(BtPersistBondingDBEachBLE cb, void *context);
 
 //! Registers all the existing BLE bondings with the BT driver lib.
@@ -126,7 +125,7 @@ bool bt_persistent_storage_get_local_device_name(char *local_device_name_out, si
 
 //! Stores the customized local device name
 //! @param local_device_name The device name to store
-//! @param size The size of the string
+//! @param max_size The size of the string
 void bt_persistent_storage_set_local_device_name(char *local_device_name, size_t max_size);
 
 //! Retrieve the airplane mode setting
@@ -134,7 +133,7 @@ void bt_persistent_storage_set_local_device_name(char *local_device_name, size_t
 bool bt_persistent_storage_get_airplane_mode_enabled(void);
 
 //! Store the airplane mode setting
-//! @param the airplane mode state to be saved
+//! @param enable the airplane mode state to be saved
 void bt_persistent_storage_set_airplane_mode_enabled(bool enable);
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

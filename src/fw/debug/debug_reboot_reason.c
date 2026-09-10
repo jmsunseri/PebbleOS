@@ -2,19 +2,12 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "debug.h"
-#include "advanced_logging.h"
-
-#include <stdbool.h>
-#include <stdint.h>
 
 #include "comm/ble/gatt_service_changed.h"
-#include "drivers/pmic.h"
 #include "kernel/core_dump.h"
 #include "kernel/event_loop.h"
-#include "kernel/pbl_malloc.h"
 #include "popups/crashed_ui.h"
-#include "pbl/services/analytics/analytics.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/reboot_reason.h"
 
 static RebootReasonCode s_last_reboot_reason_code = RebootReasonCode_Unknown;
@@ -141,12 +134,6 @@ void debug_reboot_reason_print(McuRebootReason mcu_reboot_reason) {
   }
 
   PBL_LOG_INFO("MCU reset reason mask: 0x%x", (int)mcu_reboot_reason.reset_mask);
-#ifdef CONFIG_PMIC
-  uint32_t pmic_reset_reason = pmic_get_last_reset_reason();
-  if (pmic_reset_reason != 0) {
-    PBL_LOG_INFO("PMIC reset reason mask: 0x%x", (int)pmic_reset_reason);
-  }
-#endif
 
   // Core dumps always get an alert display, since the user asked for it.
   if (reason.code == RebootReasonCode_ForcedCoreDump) {

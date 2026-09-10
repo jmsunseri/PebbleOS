@@ -8,17 +8,13 @@
 #include "applib/app_inbox.h"
 #include "applib/app_message/app_message_internal.h"
 #include "applib/app_wakeup.h"
-#include "applib/backlight_service.h"
 #include "applib/backlight_service_private.h"
-#include "applib/battery_state_service.h"
 #include "applib/battery_state_service_private.h"
 #include "applib/bluetooth/ble_app_support.h"
 #include "applib/compass_service_private.h"
-#include "applib/connection_service.h"
 #include "applib/connection_service_private.h"
 #include "applib/graphics/gtypes.h"
 #include "applib/graphics/text_render.h"
-#include "applib/health_service.h"
 #include "applib/health_service_private.h"
 #include "applib/pbl_std/locale.h"
 #include "applib/plugin_service_private.h"
@@ -28,15 +24,13 @@
 #include "applib/ui/animation_private.h"
 #include "applib/ui/click_internal.h"
 #include "applib/ui/content_indicator_private.h"
-#include "applib/ui/recognizer/recognizer.h"
 #include "applib/ui/speaker.h"
 #include "applib/ui/window_stack_private.h"
 #include "applib/unobstructed_area_service_private.h"
-#include "kernel/logging_private.h"
+#include "logging/logging_private.h"
 #include "pbl/services/app_glances/app_glance_service.h"
 #include "pbl/services/timeline/timeline_actions.h"
-#include "util/heap.h"
-#include "util/list.h"
+#include "pbl/util/heap.h"
 
 struct _reent;
 
@@ -132,6 +126,28 @@ ContentIndicatorsBuffer *app_state_get_content_indicators_buffer(void);
 HealthServiceState *app_state_get_health_service_state(void);
 
 RecognizerList *app_state_get_recognizer_list(void);
+
+struct RecognizerManager *app_state_get_recognizer_manager(void);
+
+struct TouchNavState *app_state_get_touch_nav_state(void);
+
+//! Subscribe the app task's touch-service system slot to the nav dispatcher (no-op unless the
+//! master nav pref is on). Runs on the app task.
+void app_touch_nav_subscribe(void);
+
+//! Unsubscribe the app task's nav dispatcher and cancel any in-flight gesture. Runs on the app task.
+void app_touch_nav_unsubscribe(void);
+
+//! Re-evaluate the app twin's gate for the running app after a pref flip and install or remove the
+//! nav dispatcher accordingly (keeps an opted-in app subscribed when only the Touch Navigation
+//! sub-pref turned off).
+void app_touch_nav_resync(void);
+
+//! Privileged setter behind the app_touch_navigation_enable() SDK call (invoked via the
+//! sys_app_touch_navigation_enable syscall). Sets this app's touch-nav participation and reconciles
+//! the app twin's subscription with the master pref (subscribe when enabling with the pref on,
+//! unsubscribe when disabling). Idempotent. Runs on the app task.
+void app_touch_nav_set_participating(bool enable);
 
 JsRuntimeContext *app_state_get_js_runtime_context(void);
 

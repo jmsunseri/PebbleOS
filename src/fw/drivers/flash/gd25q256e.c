@@ -2,14 +2,13 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "board/board.h"
-#include "drivers/flash/flash_impl.h"
-#include "drivers/flash/qspi_flash.h"
-#include "drivers/flash/qspi_flash_part_definitions.h"
+#include <pbl/drivers/flash/flash_impl.h>
+#include <pbl/drivers/flash/qspi_flash.h>
+#include <pbl/drivers/flash/qspi_flash_part_definitions.h>
 #include "flash_region/flash_region.h"
 #include "system/passert.h"
 #include "system/status_codes.h"
-#include "util/math.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 static bool s_protected;
 static FlashAddress s_protected_start;

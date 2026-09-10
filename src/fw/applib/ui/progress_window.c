@@ -8,12 +8,10 @@
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/window_private.h"
 #include "applib/ui/window_stack.h"
-#include "kernel/pbl_malloc.h"
 #include "pbl/services/compositor/compositor_transitions.h"
 #include "pbl/services/timeline/timeline_resources.h"
-#include "system/logging.h"
 #include "system/passert.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 
 #define SCROLL_OUT_MS 250
 #define BAR_HEIGHT PROGRESS_SUGGESTED_HEIGHT

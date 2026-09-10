@@ -3,18 +3,18 @@
 
 #include "clar.h"
 
-#include "drivers/hrm.h"
-#include "os/tick.h"
+#include <pbl/drivers/hrm.h>
+#include "pbl/kernel/types.h"
 #include "pbl/services/hrm/hrm_manager.h"
 #include "pbl/services/hrm/hrm_manager_private.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #include "fake_app_manager.h"
 #include "fake_events.h"
 #include "fake_new_timer.h"
 #include "fake_pbl_malloc.h"
 #include "fake_system_task.h"
-#include "fake_queue.h"
+#include <errno.h>
 #include "fake_rtc.h"
 
 #include "stubs_accel_manager.h"
@@ -52,9 +52,16 @@ extern uint32_t prv_get_dropped_events_count(void);
 
 static struct {
   bool enabled;
+  HRMFeature features;
+  int enable_count;
 } s_hrm_state;
 
-bool hrm_enable(HRMDevice *dev) { s_hrm_state.enabled = true; return true; }
+bool hrm_enable(HRMDevice *dev, HRMFeature features) {
+  s_hrm_state.enabled = true;
+  s_hrm_state.features = features;
+  s_hrm_state.enable_count++;
+  return true;
+}
 void hrm_disable(HRMDevice *dev) { s_hrm_state.enabled = false; }
 bool hrm_is_enabled(HRMDevice *dev) { return s_hrm_state.enabled; }
 
@@ -62,24 +69,24 @@ bool hrm_is_enabled(HRMDevice *dev) { return s_hrm_state.enabled; }
 // Queue Fakes
 // -----------------------------------------------------------------------------
 
-static const QueueHandle_t FAKE_APP_QUEUE = (QueueHandle_t) 1337;
+static struct pbl_msgq s_fake_app_queue;
+#define FAKE_APP_QUEUE (&s_fake_app_queue)
 static uint32_t s_event_count;
 static bool s_queue_full;
 static PebbleEvent s_events_received[16];
-signed portBASE_TYPE xQueueGenericSend(QueueHandle_t xQueue, const void * const pvItemToQueue,
-                                       TickType_t xTicksToWait, portBASE_TYPE xCopyPosition) {
-  cl_assert_equal_i((intptr_t) xQueue, (intptr_t) FAKE_APP_QUEUE);
+int pbl_msgq_put(struct pbl_msgq *q, const void *msg, pbl_timeout_t timeout) {
+  cl_assert_equal_p(q, FAKE_APP_QUEUE);
   if (s_queue_full) {
-    return pdFALSE;
+    return -EBUSY;
   }
   if (s_event_count < ARRAY_LENGTH(s_events_received)) {
-    s_events_received[s_event_count] = *((PebbleEvent *)pvItemToQueue);
+    s_events_received[s_event_count] = *((const PebbleEvent *)msg);
   }
   ++s_event_count;
-  return pdTRUE;
+  return 0;
 }
 
-QueueHandle_t pebble_task_get_to_queue(PebbleTask task) {
+struct pbl_msgq *pebble_task_get_to_queue(PebbleTask task) {
   switch (task) {
     case PebbleTask_App:
       return FAKE_APP_QUEUE;
@@ -206,7 +213,41 @@ void test_hrm_manager__subscription(void) {
   cl_assert_equal_b(hrm_is_enabled(HRM), false);
 }
 
-// When we cleanup after an app process, its subscription, if any, should get an expriration time
+// When the union of subscriber features changes while the sensor is on, the manager must restart
+// the sensor with the new feature set
+void test_hrm_manager__feature_change_restarts_sensor(void) {
+  AppInstallId app_id = 1;
+
+  HRMSessionRef session_ref = sys_hrm_manager_app_subscribe(app_id, 1, 0 /*expire_s*/,
+                                                            HRMFeature_BPM);
+  fake_system_task_callbacks_invoke_pending();
+  cl_assert_equal_b(hrm_is_enabled(HRM), true);
+  cl_assert_equal_i(s_hrm_state.features, HRMFeature_BPM);
+  cl_assert_equal_i(s_hrm_state.enable_count, 1);
+
+  // Re-subscribing with HRV added replaces the app's subscription and restarts the sensor
+  // with the new feature union
+  HRMSessionRef new_ref = sys_hrm_manager_app_subscribe(app_id, 1, 0 /*expire_s*/,
+                                                        HRMFeature_BPM | HRMFeature_HRV);
+  cl_assert(new_ref == session_ref);
+  fake_system_task_callbacks_invoke_pending();
+  cl_assert_equal_b(hrm_is_enabled(HRM), true);
+  cl_assert_equal_i(s_hrm_state.features, HRMFeature_BPM | HRMFeature_HRV);
+  cl_assert_equal_i(s_hrm_state.enable_count, 2);
+
+  // Dropping HRV again restarts back to BPM only
+  sys_hrm_manager_app_subscribe(app_id, 1, 0 /*expire_s*/, HRMFeature_BPM);
+  fake_system_task_callbacks_invoke_pending();
+  cl_assert_equal_b(hrm_is_enabled(HRM), true);
+  cl_assert_equal_i(s_hrm_state.features, HRMFeature_BPM);
+  cl_assert_equal_i(s_hrm_state.enable_count, 3);
+
+  sys_hrm_manager_unsubscribe(session_ref);
+  fake_system_task_callbacks_invoke_pending();
+  cl_assert_equal_b(hrm_is_enabled(HRM), false);
+}
+
+// When we cleanup after an app process, its subscription, if any, should get an expiration time
 // placed on it
 void test_hrm_manager__app_cleanup(void) {
   stub_pebble_tasks_set_current(PebbleTask_App);
@@ -617,7 +658,7 @@ void test_hrm_manager__enable_disable(void) {
 
 // Advance time the given number of milliseconds
 static void prv_advance_time_ms(uint32_t ms) {
-  RtcTicks delta_ticks = milliseconds_to_ticks(ms);
+  RtcTicks delta_ticks = pbl_ms_to_ticks(ms);
   fake_rtc_set_ticks(rtc_get_ticks() + delta_ticks);
   rtc_set_time(rtc_get_time() + ms / MS_PER_SECOND);
 }
@@ -776,6 +817,66 @@ void test_hrm_manager__app_queue_full_drops_without_panic(void) {
   cl_assert_equal_i(s_events_received[0].type, PEBBLE_HRM_EVENT);
   cl_assert_equal_i(s_events_received[0].hrm.event_type, HRMEvent_BPM);
   cl_assert_equal_i(prv_get_dropped_events_count(), 1);
+
+  sys_hrm_manager_unsubscribe(session_ref);
+}
+
+// A subscriber the sensor cannot serve (quality never reaches Good) must not pin the sensor on
+// indefinitely: after HRM_MAX_UNSERVED_TIME_SEC it is deferred to its next interval.
+void test_hrm_manager__unserved_subscriber_timeout(void) {
+  HRMSessionRef session_ref = sys_hrm_manager_app_subscribe(1 /*app_id*/, 600 /*interval_s*/,
+                                                            0 /*expire_s*/, HRMFeature_BPM);
+  fake_system_task_callbacks_invoke_pending();
+
+  // Never served, so the sensor turns on right away
+  cl_assert_equal_b(hrm_is_enabled(HRM), true);
+
+  // Sub-Good readings don't serve the subscriber; the sensor stays on before the timeout
+  const HRMData poor_data = {
+    .features = HRMFeature_BPM,
+    .hrm_bpm = 70,
+    .hrm_quality = HRMQuality_Acceptable,
+  };
+  for (int i = 0; i < 2 * HRM_CHECK_SENSOR_DISABLE_COUNT; ++i) {
+    hrm_manager_new_data_cb(&poor_data);
+    fake_system_task_callbacks_invoke_pending();
+  }
+  cl_assert_equal_b(hrm_is_enabled(HRM), true);
+
+  // Once the serve window expires, the subscriber is deferred and the sensor powers off
+  prv_advance_time_ms((HRM_MAX_UNSERVED_TIME_SEC + 1) * MS_PER_SECOND);
+  for (int i = 0; i <= HRM_CHECK_SENSOR_DISABLE_COUNT; ++i) {
+    hrm_manager_new_data_cb(&poor_data);
+    fake_system_task_callbacks_invoke_pending();
+  }
+  cl_assert_equal_b(hrm_is_enabled(HRM), false);
+
+  // The re-enable timer waits out the subscriber's interval, not another immediate attempt
+  uint32_t timeout_ms = stub_new_timer_timeout(prv_get_timer_id());
+  cl_assert_equal_i(timeout_ms, (600 - HRM_SENSOR_SPIN_UP_SEC) * MS_PER_SECOND);
+
+  sys_hrm_manager_unsubscribe(session_ref);
+}
+
+// The unserved-subscriber timeout must not shut the sensor off under a short-interval (live HR)
+// subscriber: deferring it makes it due again immediately, so the sensor stays on.
+void test_hrm_manager__unserved_timeout_keeps_live_hr_on(void) {
+  HRMSessionRef session_ref = sys_hrm_manager_app_subscribe(1 /*app_id*/, 1 /*interval_s*/,
+                                                            0 /*expire_s*/, HRMFeature_BPM);
+  fake_system_task_callbacks_invoke_pending();
+  cl_assert_equal_b(hrm_is_enabled(HRM), true);
+
+  const HRMData poor_data = {
+    .features = HRMFeature_BPM,
+    .hrm_bpm = 70,
+    .hrm_quality = HRMQuality_Acceptable,
+  };
+  prv_advance_time_ms((HRM_MAX_UNSERVED_TIME_SEC + 1) * MS_PER_SECOND);
+  for (int i = 0; i <= HRM_CHECK_SENSOR_DISABLE_COUNT; ++i) {
+    hrm_manager_new_data_cb(&poor_data);
+    fake_system_task_callbacks_invoke_pending();
+  }
+  cl_assert_equal_b(hrm_is_enabled(HRM), true);
 
   sys_hrm_manager_unsubscribe(session_ref);
 }

@@ -9,9 +9,9 @@
 #include "kernel/pbl_malloc.h"
 #include "process_state/app_state/app_state.h"
 #include "resource/resource_ids.auto.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #include <stdio.h>
 
@@ -44,7 +44,7 @@ static const MenuDetailRowData menu_detail_row_data_notifications[] = {
   {"Liron Damir", "Late again. Sorry, I'll be on time in the future.", NULL},
   {"Angela Tam", "Late again? Can you be on time for once?", NULL},
   {"Eric Migicovsky", "Friday meeting will be held in the big room.", NULL},
-  {"Intagram", "Keep scrolling down.", NULL},
+  {"Instagram", "Keep scrolling down.", NULL},
   {"Liron Levak", "That's not my name.", NULL},
   {"Kimberly North West Kardashian", "I broke the Internet again.", NULL},
   {"Henry Damir", "That's not my name.", NULL},

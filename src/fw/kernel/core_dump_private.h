@@ -3,13 +3,10 @@
 
 #pragma once
 
-#include <inttypes.h>
 #include <stdint.h>
 
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 #include "pebbleos/core_dump_structs.h"
-
-#include "portmacro.h"
 
 // Size of RAM
 // TODO: Do we have an equate for the total size of RAM somewhere else?
@@ -17,18 +14,18 @@
 #define COREDUMP_RAM_SIZE (276 * 1024)
 #elif defined(CONFIG_BOARD_QEMU_FLINT)
 #define COREDUMP_RAM_SIZE (256 * 1024)
-#elif defined(CONFIG_BOARD_FAMILY_OBELIX) || defined(CONFIG_BOARD_FAMILY_GETAFIX)
+#elif defined(CONFIG_BOARD_OBELIX) || defined(CONFIG_BOARD_GETAFIX)
 // Main RAM on SF32LB52 extends to _heap_end (0x20045000).
 // Thread stacks can be allocated above the 256KB mark.
 #define COREDUMP_RAM_SIZE (276 * 1024)
-#elif defined(CONFIG_BOARD_FAMILY_ASTERIX)
+#elif defined(CONFIG_BOARD_ASTERIX)
 #define COREDUMP_RAM_SIZE (256 * 1024)
 #endif
 
 // LCPU (BLE coprocessor) RAM, in the LPSYS domain outside main RAM.
 #if defined(CONFIG_SOC_SF32LB52)
 #define COREDUMP_LCPU_RAM_START (0x20400000)
-#define COREDUMP_LCPU_RAM_SIZE (24 * 1024)
+#define COREDUMP_LCPU_RAM_SIZE (64 * 1024)
 #endif
 
 // Max number of core dump images we can fit in our allocated space
@@ -75,7 +72,7 @@ typedef struct {
   uint32_t    unformatted;          // set of 1 bit flags, bit n set means region n is still unformatted
 } CoreDumpFlashHeader;
 
-// This comes first in the front of each possibe flash region. It is NOT returned as part of the core dump
+// This comes first in the front of each possible flash region. It is NOT returned as part of the core dump
 // image.
 typedef struct {
   uint32_t    magic;                // set to CORE_DUMP_FLASH_HDR_MAGIC

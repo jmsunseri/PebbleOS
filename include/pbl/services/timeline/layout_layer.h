@@ -8,7 +8,7 @@
 #include "applib/graphics/gtypes.h"
 #include "applib/ui/animation.h"
 #include "applib/ui/layer.h"
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 #include "util/time/time.h"
 
 typedef enum {
@@ -21,13 +21,13 @@ typedef enum {
 //! LayoutLayers depart from traditional Layers in a few meaningful way.
 //! 1) LayoutLayers are modulated by a "mode", which is the context in which the LayoutLayer
 //! is displayed. Examples of modes are the "card" mode which displays detailed pin info
-//! and the "minimzed" mode which is used to display a "toast" like mode of a pin.
+//! and the "minimized" mode which is used to display a "toast" like mode of a pin.
 //! 2) LayoutLayers expose three more generic APIs:
 //! \ref layout_get_size which returns the size of the
 //! content within the layout as well as a generic constructor/destructor:
 //!  \ref layout_create / \ref layout_destroy.
 //! 3) LayoutLayers are constructed from a set of Attributes which they are meant to display.
-//! 4) Sub-types of LayoutLayer are instanciated by summoning the correct type ID rather than by
+//! 4) Sub-types of LayoutLayer are instantiated by summoning the correct type ID rather than by
 //! calling a specialized constructor / destructor as per the Layer API.
 
 //! LayoutIds identify the type of a LayoutLayer. They are passed to the constructor to
@@ -133,13 +133,13 @@ struct LayoutLayerConfig {
   void *context;
 };
 
-//! Call the correct \ref LayoutLayerConstructor for a given \ref LayoutId
+//! Call the correct \c LayoutLayerConstructor for a given \ref LayoutId
 LayoutLayer *layout_create(LayoutId id, const LayoutLayerConfig *config);
 
 //! Verify that the required attributes are there for the layout
 bool layout_verify(bool existing_attributes[], LayoutId id);
 
-//! Call the \ref LayoutLayerSizeGetter for a given layout
+//! Call the \c LayoutLayerSizeGetter for a given layout
 GSize layout_get_size(GContext *ctx, LayoutLayer *layout);
 
 const LayoutColors *layout_get_colors(const LayoutLayer *layout);

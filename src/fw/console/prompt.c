@@ -6,18 +6,16 @@
 
 #include "console_internal.h"
 #include "dbgserial.h"
-#include "drivers/rtc.h"
-#include "kernel/pbl_malloc.h"
+#include <pbl/drivers/rtc.h>
 #include "pulse_protocol_impl.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/likely.h"
+#include "pbl/util/likely.h"
 
 #include "pbl/services/system_task.h"
 
 #include <string.h>
 #include <stdbool.h>
-#include <stdlib.h>
 #include <stdio.h>
 
 #define PROMPT_RESP_ACK (100)

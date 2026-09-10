@@ -11,7 +11,7 @@
 #include "syscall/syscall_internal.h"
 #include "system/reboot_reason.h"
 #include "system/version.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 #include "util/time/time.h"
 
 #define HEARTBEAT_PERIOD_SEC 3600
@@ -28,55 +28,40 @@ extern void pbl_analytics_external_collect_vibe_stats(void);
 extern void pbl_analytics_external_collect_speaker_stats(void);
 extern void pbl_analytics_external_collect_settings(void);
 
-#if defined(ANALYTICS_NATIVE) || defined(ANALYTICS_MEMFAULT)
-
 #ifdef ANALYTICS_NATIVE
+
 extern void pbl_analytics__native_init(void);
 extern void pbl_analytics__native_heartbeat(void);
 
 extern const struct pbl_analytics_backend_ops pbl_analytics__native_ops;
-#endif
-
-#ifdef ANALYTICS_MEMFAULT
-extern void pbl_analytics__memfault_init(void);
-extern void pbl_analytics__memfault_heartbeat(void);
-
-extern const struct pbl_analytics_backend_ops pbl_analytics__memfault_ops;
-#endif
 
 static TimerID s_heartbeat_timer;
 
 static void (*const s_init[])(void) = {
-#ifdef ANALYTICS_NATIVE
     pbl_analytics__native_init,
-#endif
-#ifdef ANALYTICS_MEMFAULT
-    pbl_analytics__memfault_init,
-#endif
 };
 
 static void (*const s_heartbeat[])(void) = {
-#ifdef ANALYTICS_NATIVE
     pbl_analytics__native_heartbeat,
-#endif
-#ifdef ANALYTICS_MEMFAULT
-    pbl_analytics__memfault_heartbeat,
-#endif
 };
 
 static const struct pbl_analytics_backend_ops *s_backend_ops[] = {
-#ifdef ANALYTICS_NATIVE
     &pbl_analytics__native_ops,
-#endif
-#ifdef ANALYTICS_MEMFAULT
-    &pbl_analytics__memfault_ops,
-#endif
 };
 
 static void prv_heartbeat_system_task_cb(void *data) {
+  static bool s_reboot_reason_counted = false;
+
   PBL_ANALYTICS_SET_STRING(fw_version, TINTIN_METADATA.version_tag);
   PBL_ANALYTICS_SET_UNSIGNED(last_reboot_reason, reboot_reason_get_last_reboot_reason());
   PBL_ANALYTICS_SET_UNSIGNED(uptime_s, time_get_uptime_seconds());
+
+  if (!s_reboot_reason_counted) {
+    s_reboot_reason_counted = true;
+    if (reboot_reason_get_last_reboot_reason() >= RebootReasonCode_Watchdog) {
+      PBL_ANALYTICS_ADD(unexpected_reboot_count, 1);
+    }
+  }
 
   pbl_analytics_external_collect_battery();
   pbl_analytics_external_collect_cpu_stats();
@@ -110,7 +95,7 @@ void pbl_analytics_init(void) {
 }
 
 // Apps pass `key` straight through to backends that use it as an unchecked
-// index into fixed-size kernel tables (`s_key_to_integer[]`, `s_pbl_to_memfault[]`,
+// index into fixed-size kernel tables (`s_key_to_integer[]`,
 // `s_string_ptrs[]`, `s_string_lens[]`, ...). An out-of-range key reads
 // arbitrary kernel bytes; in the set_string path those bytes become a kernel
 // pointer + length that strncpy() then writes the (validated) app string into,
