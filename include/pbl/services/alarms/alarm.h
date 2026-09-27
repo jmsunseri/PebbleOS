@@ -15,10 +15,10 @@
 //!
 //! These alarm settings will be persisted across watch resets.
 
-#define SMART_ALARM_RANGE_S (30 * SECONDS_PER_MINUTE)
-#define SMART_ALARM_SNOOZE_DELAY_S (1 * SECONDS_PER_MINUTE)
+#define SMART_ALARM_RANGE_S           (30 * SECONDS_PER_MINUTE)
+#define SMART_ALARM_SNOOZE_DELAY_S    (1 * SECONDS_PER_MINUTE)
 #define SMART_ALARM_MAX_LIGHT_SLEEP_S (30 * SECONDS_PER_MINUTE)
-#define SMART_ALARM_MAX_SMART_SNOOZE (SMART_ALARM_RANGE_S / SMART_ALARM_SNOOZE_DELAY_S)
+#define SMART_ALARM_MAX_SMART_SNOOZE  (SMART_ALARM_RANGE_S / SMART_ALARM_SNOOZE_DELAY_S)
 
 #define ALARMS_APP_HIGHLIGHT_COLOR PBL_IF_COLOR_ELSE(GColorJaegerGreen, GColorBlack)
 
@@ -29,7 +29,7 @@ typedef int AlarmId; //! A unique ID that can be used to refer to each configure
 typedef enum AlarmKind {
   ALARM_KIND_EVERYDAY = 0, // Alarms of this type will happen each day
   ALARM_KIND_WEEKENDS,     // Alarms of this type will happen Monday - Friday
-  ALARM_KIND_WEEKDAYS,     // Alarms of this type happen Saturaday and Sunday
+  ALARM_KIND_WEEKDAYS,     // Alarms of this type happen Saturday and Sunday
   ALARM_KIND_JUST_ONCE,    // Alarms of this type will happen next time the specified time occurs
   ALARM_KIND_CUSTOM,       // Alarms of this type happen on specified days
 } AlarmKind;
@@ -49,16 +49,16 @@ typedef enum AlarmTone {
 } AlarmTone;
 
 typedef struct AlarmInfo {
-  int hour; //<! Range 0-23, where 0 is 12am
-  int minute; //<! Range is 0-59
+  int hour;       //<! Range 0-23, where 0 is 12am
+  int minute;     //<! Range is 0-59
   AlarmKind kind; //<! The kind of recurrence the alarm will have
   //! A bool for each weekday (Sunday = index 0) enabled
   bool (*scheduled_days)[DAYS_PER_WEEK];
-  bool enabled; //<! Whether the alarm to go off at the specified time
-  bool is_smart; //<! Whether the alarm is a Smart Alarm
-  bool sound_enabled; //<! Whether the alarm should play a tone on speaker hardware
+  bool enabled;         //<! Whether the alarm to go off at the specified time
+  bool is_smart;        //<! Whether the alarm is a Smart Alarm
+  bool sound_enabled;   //<! Whether the alarm should play a tone on speaker hardware
   bool vibrate_enabled; //<! Whether the alarm should vibrate
-  AlarmTone tone; //<! Selected tone for this alarm (used when sound_enabled is true)
+  AlarmTone tone;       //<! Selected tone for this alarm (used when sound_enabled is true)
 } AlarmInfo;
 
 typedef void (*AlarmForEach)(AlarmId id, const AlarmInfo *info, void *context);
@@ -78,7 +78,7 @@ void alarm_set_time(AlarmId id, int hour, int minute);
 void alarm_set_kind(AlarmId id, AlarmKind kind);
 
 //! @param id The alarm that should be updated
-//! @param scheduled_days[DAYS_PER_WEEK] A bool for each weekday (Sunday = index 0) enabled
+//! @param scheduled_days A bool for each weekday (Sunday = index 0) enabled
 //! each weekday that is marked as true
 void alarm_set_custom(AlarmId id, const bool scheduled_days[DAYS_PER_WEEK]);
 
@@ -109,7 +109,7 @@ bool alarm_get_info(AlarmId id, AlarmInfo *info_out);
 AlarmId alarm_get_most_recent_id(void);
 
 //! @param id The alarm for which the scheduled_days array should be updated for
-//! @param scheduled_days[DAYS_PER_WEEK] An empty bool array for each weekday (Sunday = index 0)
+//! @param scheduled_days An empty bool array for each weekday (Sunday = index 0)
 //! that is to be updated. Alarms will run on each weekday that is marked as true
 //! @return True if the alarm exists, False otherwise
 bool alarm_get_custom_days(AlarmId id, bool scheduled_days[DAYS_PER_WEEK]);
@@ -122,7 +122,7 @@ void alarm_set_enabled(AlarmId id, bool enable);
 void alarm_delete(AlarmId id);
 
 //! @param id The alarm that is being queried
-//! @return True if the alarm exists and is not disabled, Flase otherwise
+//! @return True if the alarm exists and is not disabled, False otherwise
 bool alarm_get_enabled(AlarmId id);
 
 //! @param id The alarm that should be deleted
@@ -184,7 +184,7 @@ const char *alarm_get_string_for_kind(AlarmKind kind, bool all_caps);
 
 //! For an alarm of type custom, retrieve a string representing the days that the alarm is set for
 //! Example: 1 day: ("Mondays", "Tuesdays"), multiple days: ("Mon,Sat,Sun", "Tue,Thu")
-//! @param [in] scheduled_days[DAYS_PER_WEEK] A bool for each weekday (Sunday = index 0) enabled
+//! @param [in] scheduled_days A bool for each weekday (Sunday = index 0) enabled
 //! @param [out] alarm_day_text A character array that is to be updated with the days. It should
 //! have a minimum of 28 bytes allocated
 void alarm_get_string_for_custom(bool scheduled_days[DAYS_PER_WEEK], char *alarm_day_text);

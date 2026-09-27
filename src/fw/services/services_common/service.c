@@ -16,18 +16,19 @@
 #include "pbl/services/comm_session/app_session_capabilities.h"
 #include "pbl/services/comm_session/default_kernel_sender.h"
 #include "pbl/services/comm_session/session.h"
-#include "pbl/services/cron.h"
+#include <pbl/cron/cron.h>
 #include "pbl/services/firmware_update.h"
 #include "pbl/services/hrm/hrm_manager.h"
 #include "pbl/services/light.h"
+#include "kernel/remote_input.h"
 #include "pbl/services/poll_remote.h"
 #include "pbl/services/put_bytes/put_bytes.h"
 #include "pbl/services/shared_prf_storage/shared_prf_storage.h"
 #include "pbl/services/touch/touch.h"
-#include "drivers/touch/touch_sensor.h"
+#include <pbl/drivers/touch/touch_sensor.h>
 #include "pbl/services/vibe_pattern.h"
 #include "pbl/services/runlevel_impl.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 void services_common_init(void) {
   firmware_update_init();
@@ -36,7 +37,7 @@ void services_common_init(void) {
   accel_manager_init();
   light_init();
 
-  cron_service_init();
+  pbl_cron_init();
 
   shared_prf_storage_init();
   bt_persistent_storage_init();
@@ -47,9 +48,13 @@ void services_common_init(void) {
 #endif
   comm_session_init();
 
+  remote_input_init();
+
   bt_ctl_init();
 
-#ifdef CONFIG_TOUCH
+#ifdef CONFIG_SERVICE_TOUCH
+  // Gate on the same symbol that compiles touch.c and its consumers (e.g. the remote input
+  // endpoint), so no configuration can reach the touch service before touch_init() has run.
   touch_init();
 #endif
 
@@ -67,10 +72,8 @@ static struct ServiceRunLevelSetting s_runlevel_settings[] = {
     .set_enable_fn = light_allow,
     .enable_mask = R_LowPower | R_FirmwareUpdate | R_Normal,
   },
-  {
-    .set_enable_fn = vibe_service_set_enabled,
-    .enable_mask = R_LowPower | R_FirmwareUpdate | R_Normal
-  },
+  {.set_enable_fn = vibe_service_set_enabled,
+   .enable_mask = R_LowPower | R_FirmwareUpdate | R_Normal},
   {
     .set_enable_fn = bt_ctl_set_enabled,
     .enable_mask = R_FirmwareUpdate | R_Normal,
@@ -97,4 +100,3 @@ void services_common_set_runlevel(RunLevel runlevel) {
     service->set_enable_fn(((1 << runlevel) & service->enable_mask) != 0);
   }
 }
-

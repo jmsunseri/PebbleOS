@@ -2,7 +2,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "applib/ui/window_private.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #include "clar.h"
 
@@ -69,7 +69,7 @@
 #include "stubs_sleep.h"
 #include "stubs_syscalls.h"
 #include "stubs_system_theme.h"
-#include "stubs_task_watchdog.h"
+#include "stubs_task_wdt.h"
 #include "stubs_timeline.h"
 #include "stubs_timeline_actions.h"
 #include "stubs_timeline_layout.h"

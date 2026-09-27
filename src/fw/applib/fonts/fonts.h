@@ -23,7 +23,7 @@
 //! @see \ref fonts_load_custom_font()
 //! @see \ref text_layer_set_font()
 //! @see \ref graphics_draw_text()
-typedef FontInfo* GFont;
+typedef FontInfo *GFont;
 
 //! @internal
 //! Gets the fallback system font (14pt Raster Gothic)
@@ -38,11 +38,14 @@ GFont fonts_get_fallback_font(void);
 //! @note This may load a font from the flash peripheral into RAM.
 GFont fonts_get_system_font(const char *font_key);
 
+//! @internal
+//! Gets the largest loadable system emoji font whose height is <= font_size.
+//! @return NULL if no such font could be loaded.
 GFont fonts_get_system_emoji_font_for_size(unsigned int font_size);
 
 //! Loads a custom font.
 //! @param handle The resource handle of the font to load. See resource_ids.auto.h
-//! for a list of resource IDs, and use \ref resource_get_handle() to obtain the resource handle.
+//! for a list of resource IDs, and use @c resource_get_handle() to obtain the resource handle.
 //! @return An opaque pointer to the loaded font, or a pointer to the default
 //! (fallback) font if the specified font cannot be loaded.
 //! @see Read the <a href="http://developer.getpebble.com/guides/pebble-apps/resources/">App

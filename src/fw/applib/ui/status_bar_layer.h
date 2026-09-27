@@ -18,28 +18,19 @@
 //!     @{
 
 //! The fixed height of the status bar, including separator height, for all platforms.
-#define _STATUS_BAR_LAYER_HEIGHT(plat) PBL_PLATFORM_SWITCH(plat, \
-  /*aplite*/ 16, \
-  /*basalt*/ 16, \
-  /*chalk*/ 24, \
-  /*diorite*/ 16, \
-  /*emery*/ 20, \
-  /*flint*/ 16, \
-  /*gabbro*/ 20)
+#define _STATUS_BAR_LAYER_HEIGHT(plat)                                                  \
+  PBL_PLATFORM_SWITCH(plat, /*aplite*/ 16, /*basalt*/ 16, /*chalk*/ 24, /*diorite*/ 16, \
+                      /*emery*/ 20, /*flint*/ 16, /*gabbro*/ 20)
 
 //! The fixed height of the status bar, including separator height
 #define STATUS_BAR_LAYER_HEIGHT _STATUS_BAR_LAYER_HEIGHT(PBL_PLATFORM_TYPE_CURRENT)
 
 //! The height of the status bar when rendering the "Big & Bold" clock, including
 //! separator height, for all platforms.
-#define _STATUS_BAR_LAYER_LARGE_BOLD_HEIGHT(plat) PBL_PLATFORM_SWITCH(plat, \
-  /*aplite*/ 20, \
-  /*basalt*/ 20, \
-  /*chalk*/ 24, /* already tall enough; only the font grows */ \
-  /*diorite*/ 20, \
-  /*emery*/ 26, \
-  /*flint*/ 20, \
-  /*gabbro*/ 26)
+#define _STATUS_BAR_LAYER_LARGE_BOLD_HEIGHT(plat)                                                  \
+  PBL_PLATFORM_SWITCH(plat, /*aplite*/ 20, /*basalt*/ 20, /*chalk*/ 24,                            \
+                      /* already tall enough; only the font grows */ /*diorite*/ 20, /*emery*/ 26, \
+                      /*flint*/ 20, /*gabbro*/ 26)
 
 //! The "Big & Bold" status bar height for the current platform.
 #define STATUS_BAR_LAYER_LARGE_BOLD_HEIGHT \
@@ -62,7 +53,6 @@
 //! The max size of the total value of set_info_progress before progress is displayed as percentage
 #define MAX_INFO_TOTAL 99
 
-
 //! Values that are used to indicate the different status bar modes
 typedef enum {
   //! Default mode. Time display takes priority
@@ -76,6 +66,9 @@ typedef enum {
   //! Same as StatusBarLayerModeClock but renders the time using a larger bold
   //! font in a taller bar (the notification "Big & Bold" style).
   StatusBarLayerModeClockLargeBold = 4,
+  //! Same as StatusBarLayerModeClockLargeBold but draws a 1px black outline around the glyphs, for
+  //! legibility over busy backgrounds such as album art.
+  StatusBarLayerModeClockLargeBoldOutlined = 5,
 } StatusBarLayerMode;
 
 //! Values that are used to indicate the different status bar separator modes.
@@ -94,12 +87,12 @@ typedef struct StatusBarLayerSeparator {
 
 //! Configuration of a StatusBarLayer independently from Layer and timer code
 typedef struct StatusBarLayerConfig {
-  char title_text_buffer[TITLE_TEXT_BUFFER_SIZE];   // center title text buffer
-  char info_text_buffer[INFO_TEXT_BUFFER_SIZE];     // right info text buffer
-  GColor foreground_color;                          // default:GColorWhite
-  GColor background_color;                          // default:GColorBlack
-  StatusBarLayerSeparator separator;                // default:StatusBarLayerSeparatorModeDotted
-  StatusBarLayerMode mode;                          // default:StatusBarLayerModeClock
+  char title_text_buffer[TITLE_TEXT_BUFFER_SIZE]; // center title text buffer
+  char info_text_buffer[INFO_TEXT_BUFFER_SIZE];   // right info text buffer
+  GColor foreground_color;                        // default:GColorWhite
+  GColor background_color;                        // default:GColorBlack
+  StatusBarLayerSeparator separator;              // default:StatusBarLayerSeparatorModeDotted
+  StatusBarLayerMode mode;                        // default:StatusBarLayerModeClock
 } StatusBarLayerConfig;
 
 //! renders a status bar as described into a given rectangle
@@ -117,9 +110,12 @@ void status_bar_layer_render(GContext *ctx, const GRect *bounds, StatusBarLayerC
 typedef struct StatusBarLayer {
   Layer layer;
   StatusBarLayerConfig config;
-  AppTimer *title_timer_id;                         // timer id for title revert
-  EventServiceInfo tick_event;                      // Event service to update the time
-  int previous_min_of_day;
+  AppTimer *title_timer_id;    // timer id for title revert
+  EventServiceInfo tick_event; // Event service to update the time
+  union {
+    int previous_min_of_day;          // clock modes
+    struct StatusBarMarquee *marquee; // title modes
+  };
 } StatusBarLayer;
 
 //! Creates a new StatusBarLayer on the heap and initializes it with the default values.
@@ -129,8 +125,6 @@ typedef struct StatusBarLayer {
 //! * Frame: `GRect(0, 0, screen_width, STATUS_BAR_LAYER_HEIGHT)`
 //! The status bar is automatically marked dirty after this operation.
 //! You can call \ref layer_set_frame() to create a StatusBarLayer of a different width.
-//! @return A pointer to the StatusBarLayer, which will be allocated to the heap,
-//! `NULL` if the StatusBarLayer could not be created
 void status_bar_layer_init(StatusBarLayer *status_bar_layer);
 
 //! Creates a new StatusBarLayer on the heap and initializes it with the default values.
@@ -199,7 +193,7 @@ void status_bar_layer_set_title(StatusBarLayer *status_bar_layer, const char *te
 const char *status_bar_layer_get_title(const StatusBarLayer *status_bar_layer);
 
 //! Resets title text to clock text
-//! @param status_bar_layer The StatusBarLayer of which to reset the title to clock
+//! @param cb_data The StatusBarLayer of which to reset the title to clock
 void status_bar_layer_reset_title(void *cb_data);
 
 //! Sets the info section to display arbitrary text

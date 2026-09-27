@@ -46,11 +46,12 @@ typedef enum {
   CommSessionRemindersAppSupport = 1 << 12,
   CommSessionWorkoutAppSupport = 1 << 13,
   CommSessionSmoothFwInstallProgressSupport = 1 << 14,
+  CommSessionImagingSupport = 1 << 17,
   CommSessionSettingsSyncSupport = 1 << 23,
   CommSessionOutOfRange
 } CommSessionCapability;
 
-#define COMM_SESSION_DEFAULT_TIMEOUT  (4000)
+#define COMM_SESSION_DEFAULT_TIMEOUT (4000)
 
 //! @return whether the specified capability is supported by the session provided
 bool comm_session_has_capability(CommSession *session, CommSessionCapability capability);
@@ -68,7 +69,7 @@ CommSession *comm_session_get_system_session(void);
 //! @note It is possible that the session becomes disconnected at any point in time.
 CommSession *comm_session_get_current_app_session(void);
 
-//! @param session_in_out[in, out] Pass in a pointer to session pointer to sanitize it. The current
+//! @param[in,out] session_in_out Pass in a pointer to session pointer to sanitize it. The current
 //! *session value can be NULL, to "auto-select" the session for the currently running app.
 //! After returning, if *session_in_out was non-NULL when passed in, it will be unchanged if the app
 //! is permitted to use it. If not, it *session_in_out will be set to NULL.
@@ -107,19 +108,22 @@ void comm_session_reset(CommSession *session);
 //! @param endpoint_id Which endpoint to send the pebble protocol message to.
 //! @param data Pointer to the buffer with data to send
 //! @param length The length of the data
-//! @param timeout The duration for how long the call is allowed to block. If the send buffer does
-//! not have enough space available to enqueue the data, this function will block up to timeout_ms.
+//! @param timeout_ms The duration for how long the call is allowed to block. If the send buffer
+//! does not have enough space available to enqueue the data, this function will block up to
+//! timeout_ms.
 //! @return true if the data was successfully queued up for sending.
-bool comm_session_send_data(CommSession *session, uint16_t endpoint_id,
-                            const uint8_t *data, size_t length, uint32_t timeout_ms);
+bool comm_session_send_data(CommSession *session, uint16_t endpoint_id, const uint8_t *data,
+                            size_t length, uint32_t timeout_ms);
 
 //! See bt_conn_mgr.h for more details on the parameters
-void comm_session_set_responsiveness(
-    CommSession *session, BtConsumer consumer, ResponseTimeState state, uint16_t max_period_secs);
+void comm_session_set_responsiveness(CommSession *session, enum pbl_bt_consumer consumer,
+                                     enum pbl_bt_response_time_state state,
+                                     uint16_t max_period_secs);
 
 //! See bt_conn_mgr.h for more details on the parameters
-void comm_session_set_responsiveness_ext(CommSession *session, BtConsumer consumer,
-                                         ResponseTimeState state, uint16_t max_period_secs,
-                                         ResponsivenessGrantedHandler granted_handler);
+void comm_session_set_responsiveness_ext(CommSession *session, enum pbl_bt_consumer consumer,
+                                         enum pbl_bt_response_time_state state,
+                                         uint16_t max_period_secs,
+                                         pbl_bt_responsiveness_granted_cb_t granted_handler);
 
 void comm_session_init(void);

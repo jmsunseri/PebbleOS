@@ -5,7 +5,6 @@
 
 #include "gdraw_command_frame.h"
 
-#include "applib/graphics/graphics.h"
 #include "applib/graphics/gtypes.h"
 
 #include <stdint.h>
@@ -40,7 +39,7 @@ GDrawCommandSequence *gdraw_command_sequence_create_with_resource_system(ResAppN
 GDrawCommandSequence *gdraw_command_sequence_clone(GDrawCommandSequence *sequence);
 
 //! Deletes the \ref GDrawCommandSequence structure and frees associated data
-//! @param image Pointer to the sequence to destroy
+//! @param sequence Pointer to the sequence to destroy
 void gdraw_command_sequence_destroy(GDrawCommandSequence *sequence);
 
 //! @internal

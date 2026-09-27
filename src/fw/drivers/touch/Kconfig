@@ -10,16 +10,18 @@ if TOUCH
 
 config TOUCH_CST816
     bool "Hynitron CST816"
+    select CST816_FW
     help
       Support for the Hynitron CST816 touch controller.
 
 config TOUCH_QEMU
     bool "QEMU Touchscreen"
+    default y if SOC_QEMU
     help
       Support for the QEMU touchscreen peripheral.
 
 module = DRIVER_TOUCH
 module-str = Touchscreen
-source "src/fw/Kconfig.template.log_level"
+source "subsys/logging/Kconfig.template.log_level"
 
 endif # TOUCH

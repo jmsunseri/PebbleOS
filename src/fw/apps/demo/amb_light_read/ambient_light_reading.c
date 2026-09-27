@@ -4,7 +4,7 @@
 #include "applib/app.h"
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/text_layer.h"
-#include "drivers/ambient_light.h"
+#include <pbl/drivers/ambient_light.h>
 #include "kernel/pbl_malloc.h"
 #include "process_management/pebble_process_md.h"
 #include "process_state/app_state/app_state.h"
@@ -41,8 +41,7 @@ static void handle_init(void) {
   Layer *window_layer = window_get_root_layer(data->window);
   GRect bounds = window_layer->bounds;
 
-  data->text_layer = text_layer_create((GRect)
-      { .origin = { 0, 40 }, .size = { bounds.size.w, 100 } });
+  data->text_layer = text_layer_create((GRect){.origin = {0, 40}, .size = {bounds.size.w, 100}});
 
   prv_populate_amb_read_str(&data->ambient_reading[0]);
 
@@ -70,10 +69,10 @@ static void s_main(void) {
   handle_deinit();
 }
 
-const PebbleProcessMd* ambient_light_reading_get_info() {
+const PebbleProcessMd *ambient_light_reading_get_info() {
   static const PebbleProcessMdSystem s_ambient_light_info = {
     .common.main_func = s_main,
     .name = "Amb Reading"
   };
-  return (const PebbleProcessMd*) &s_ambient_light_info;
+  return (const PebbleProcessMd *)&s_ambient_light_info;
 }

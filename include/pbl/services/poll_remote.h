@@ -38,9 +38,10 @@ void poll_remote_start(void);
 void poll_remote_stop(void);
 
 //! Sets the polling intervals.
+//! @param service The poll remote service for which to set the intervals.
 //! @param min_interval_minutes The minimum interval between two "poll services" requests.
 //! Calls to poll_remote_send_request() will be no-ops if min_interval_minutes has not been reached.
 //! @param max_interval_minutes The maximum interval between two "poll services" requests.
 //! The automatic sending of poll requests will only occur when max_interval_minutes is reached.
-void poll_remote_set_intervals(PollRemoteService service,
-    const uint8_t min_interval_minutes, const uint8_t max_interval_minutes);
+void poll_remote_set_intervals(PollRemoteService service, const uint8_t min_interval_minutes,
+                               const uint8_t max_interval_minutes);

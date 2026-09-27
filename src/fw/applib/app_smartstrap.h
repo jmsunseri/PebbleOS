@@ -11,7 +11,7 @@
 //! @{
 //!
 
-//! The default request timeout in milliseconds (see \ref smartstrap_set_timeout).
+//! The default request timeout in milliseconds (see @c smartstrap_set_timeout).
 #define SMARTSTRAP_TIMEOUT_DEFAULT 250
 
 //! The service_id to specify in order to read/write raw data to the smartstrap.
@@ -35,7 +35,7 @@
 
 //! Error values which may be returned from the smartstrap APIs.
 typedef enum {
-  //! No error occured.
+  //! No error occurred.
   SmartstrapResultOk = 0,
   //! Invalid function arguments were supplied.
   SmartstrapResultInvalidArgs,
@@ -48,7 +48,7 @@ typedef enum {
   SmartstrapResultServiceUnavailable,
   //! The smartstrap reported that it does not support the requested attribute.
   SmartstrapResultAttributeUnsupported,
-  //! A time-out occured during the request.
+  //! A time-out occurred during the request.
   SmartstrapResultTimeOut,
 } SmartstrapResult;
 
@@ -132,7 +132,7 @@ void app_smartstrap_set_timeout(uint16_t timeout_ms);
 //! @param attribute_id The AttributeId to create the attribute for.
 //! @param buffer_length The length of the internal buffer which will be used to store the read
 //! and write requests for this attribute.
-//! @returns The newly created SmartstrapAttribute or NULL if an internal error occured or if the
+//! @returns The newly created SmartstrapAttribute or NULL if an internal error occurred or if the
 //! specified length is greater than SMARTSTRAP_ATTRIBUTE_LENGTH_MAXIMUM.
 SmartstrapAttribute *app_smartstrap_attribute_create(SmartstrapServiceId service_id,
                                                      SmartstrapAttributeId attribute_id,
@@ -151,13 +151,13 @@ void app_smartstrap_attribute_destroy(SmartstrapAttribute *attribute);
 //! @returns Whether or not the service is available.
 bool app_smartstrap_service_is_available(SmartstrapServiceId service_id);
 
-//! Returns the ServiceId which the attribute was created for (see \ref
+//! Returns the ServiceId which the attribute was created for (see @c
 //! smartstrap_attribute_create).
 //! @param attribute The SmartstrapAttribute for which to obtain the service ID.
 //! @returns The SmartstrapServiceId which the attribute was created with.
 SmartstrapServiceId app_smartstrap_attribute_get_service_id(SmartstrapAttribute *attribute);
 
-//! Gets the AttributeId which the attribute was created for (see \ref smartstrap_attribute_create).
+//! Gets the AttributeId which the attribute was created for (see @c smartstrap_attribute_create).
 //! @param attribute The SmartstrapAttribute for which to obtain the attribute ID.
 //! @returns The SmartstrapAttributeId which the attribute was created with.
 SmartstrapAttributeId app_smartstrap_attribute_get_attribute_id(SmartstrapAttribute *attribute);

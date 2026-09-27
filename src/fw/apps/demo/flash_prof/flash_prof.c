@@ -3,17 +3,15 @@
 
 #include "process_management/pebble_process_md.h"
 #include "applib/app.h"
-#include "system/logging.h"
-#include "drivers/flash.h"
-#include "drivers/rtc.h"
+#include <pbl/logging/logging.h>
+#include <pbl/drivers/flash.h>
+#include <pbl/drivers/rtc.h>
 #include "flash_region/flash_region.h"
 #include "system/passert.h"
 #include "kernel/pbl_malloc.h"
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/number_window.h"
 #include "applib/ui/window_stack.h"
-
-#include "FreeRTOS.h"
 
 static NumberWindow number_window;
 
@@ -42,9 +40,11 @@ static void do_timed_read(NumberWindow *nw, void *data) {
 #define NUM_BYTES 1000
 
 static void handle_init(void) {
-  number_window_init(&number_window, "Num Writes", (NumberWindowCallbacks) {
-    .selected = (NumberWindowCallback) do_timed_read,
-  }, NULL);
+  number_window_init(&number_window, "Num Writes",
+                     (NumberWindowCallbacks){
+                       .selected = (NumberWindowCallback)do_timed_read,
+                     },
+                     NULL);
   number_window_set_min(&number_window, 1000);
   number_window_set_max(&number_window, 1000000);
   number_window_set_step_size(&number_window, 1000);
@@ -52,7 +52,6 @@ static void handle_init(void) {
 }
 
 static void handle_deinit(void) {
-
 }
 
 static void s_main(void) {
@@ -61,11 +60,11 @@ static void s_main(void) {
   handle_deinit();
 }
 
-const PebbleProcessMd* flash_prof_get_app_info() {
+const PebbleProcessMd *flash_prof_get_app_info() {
   static const PebbleProcessMdSystem s_app_info = {
     .common.main_func = &s_main,
     .name = "Flash Prof"
   };
 
-  return (const PebbleProcessMd*) &s_app_info;
+  return (const PebbleProcessMd *)&s_app_info;
 }

@@ -2,9 +2,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "vibe_patterns.h"
+#include "speaker_volume_window.h"
 #include "window.h"
 
-#include "applib/ui/number_window.h"
 #include "applib/ui/ui.h"
 #include "kernel/pbl_malloc.h"
 #include "pbl/services/i18n/i18n.h"
@@ -15,9 +15,9 @@
 #include "pbl/services/vibes/vibe_intensity.h"
 #include "pbl/services/vibes/vibe_score.h"
 #include "pbl/services/vibes/vibe_score_info.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/string.h"
+#include "pbl/util/string.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -42,7 +42,7 @@ typedef struct SettingsVibePatternsData {
   SettingsCallbacks callbacks;
   unsigned int toggled_vibes_mask;
 #ifdef CONFIG_SPEAKER
-  char volume_subtitle[8];  // "100%" + NUL
+  char volume_subtitle[8]; // "100%" + NUL
 #endif
 } SettingsVibePatternsData;
 
@@ -52,8 +52,8 @@ static void prv_deinit_cb(SettingsCallbacks *context) {
   app_free(data);
 }
 
-static void prv_draw_row_cb(SettingsCallbacks *context, GContext *ctx,
-                            const Layer *cell_layer, uint16_t row, bool selected) {
+static void prv_draw_row_cb(SettingsCallbacks *context, GContext *ctx, const Layer *cell_layer,
+                            uint16_t row, bool selected) {
   SettingsVibePatternsData *data = (SettingsVibePatternsData *)context;
 
   const char *title = NULL;
@@ -65,16 +65,14 @@ static void prv_draw_row_cb(SettingsCallbacks *context, GContext *ctx,
     case VibeSettingsRow_MuteSpeaker: {
       title = i18n_noop("Mute Speaker");
       subtitle = alerts_preferences_get_speaker_muted() ? i18n_noop("On") : i18n_noop("Off");
-      menu_cell_basic_draw(ctx, cell_layer, i18n_get(title, data),
-                           i18n_get(subtitle, data), NULL);
+      menu_cell_basic_draw(ctx, cell_layer, i18n_get(title, data), i18n_get(subtitle, data), NULL);
       return;
     }
     case VibeSettingsRow_SpeakerVolume: {
       title = i18n_noop("Volume");
       snprintf(data->volume_subtitle, sizeof(data->volume_subtitle), "%u%%",
                alerts_preferences_get_speaker_volume());
-      menu_cell_basic_draw(ctx, cell_layer, i18n_get(title, data),
-                           data->volume_subtitle, NULL);
+      menu_cell_basic_draw(ctx, cell_layer, i18n_get(title, data), data->volume_subtitle, NULL);
       return;
     }
 #endif
@@ -175,34 +173,6 @@ static void prv_selection_changed_cb(SettingsCallbacks *context, uint16_t new_ro
   vibe_score_destroy(score);
 }
 
-#ifdef CONFIG_SPEAKER
-static void prv_volume_window_selected(NumberWindow *number_window, void *context) {
-  const int32_t value = number_window_get_value(number_window);
-  alerts_preferences_set_speaker_volume((uint8_t)value);
-  speaker_service_handle_audio_prefs_changed();
-  settings_menu_mark_dirty(SettingsMenuItemVibrations);
-  app_window_stack_remove(&number_window->window, true /* animated */);
-}
-
-static void prv_push_volume_window(SettingsVibePatternsData *data) {
-  NumberWindow *number_window = number_window_create(
-      i18n_get("Volume", data),
-      (NumberWindowCallbacks) {
-        .selected = prv_volume_window_selected,
-      },
-      data);
-  if (!number_window) {
-    return;
-  }
-  number_window_set_min(number_window, 0);
-  number_window_set_max(number_window, 100);
-  number_window_set_step_size(number_window, 5);
-  number_window_set_value(number_window,
-                          (int32_t)alerts_preferences_get_speaker_volume());
-  app_window_stack_push(&number_window->window, true /* animated */);
-}
-#endif
-
 static void prv_select_click_cb(SettingsCallbacks *context, uint16_t row) {
   vibes_cancel();
 
@@ -217,7 +187,7 @@ static void prv_select_click_cb(SettingsCallbacks *context, uint16_t row) {
       return;
     }
     case VibeSettingsRow_SpeakerVolume: {
-      prv_push_volume_window((SettingsVibePatternsData *)context);
+      speaker_volume_window_push();
       return;
     }
 #endif
@@ -244,7 +214,7 @@ static void prv_select_click_cb(SettingsCallbacks *context, uint16_t row) {
     case VibeSettingsRow_System: {
       const VibeIntensity current_system_default_vibe_intensity = vibe_intensity_get();
       const VibeIntensity next_system_default_vibe_intensity =
-        vibe_intensity_cycle_next(current_system_default_vibe_intensity);
+          vibe_intensity_cycle_next(current_system_default_vibe_intensity);
 
       // Set the next system default vibe intensity and vibe a short pulse so the user can feel it
       vibe_intensity_set(next_system_default_vibe_intensity);
@@ -293,7 +263,7 @@ static void prv_hide_cb(SettingsCallbacks *context) {
 static Window *prv_init(void) {
   SettingsVibePatternsData *data = app_zalloc_check(sizeof(SettingsVibePatternsData));
 
-  data->callbacks = (SettingsCallbacks) {
+  data->callbacks = (SettingsCallbacks){
     .deinit = prv_deinit_cb,
     .draw_row = prv_draw_row_cb,
     .selection_changed = prv_selection_changed_cb,

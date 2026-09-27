@@ -3,25 +3,21 @@
 
 #include "window_stack.h"
 
-#include "animation_private.h"
 #include "app_window_click_glue.h"
+#include "recognizer/recognizer_manager.h"
 #include "window_manager.h"
 #include "window_private.h"
 #include "window_stack_animation.h"
 #include "window_stack_private.h"
 
 #include "applib/applib_malloc.auto.h"
-#include "applib/legacy2/ui/status_bar_legacy2.h"
-#include "kernel/events.h"
 #include "kernel/pbl_malloc.h"
-#include "kernel/ui/kernel_ui.h"
-#include "process_management/app_manager.h"
 #include "process_state/app_state/app_state.h"
 #include "pbl/services/compositor/compositor.h"
 #include "syscall/syscall.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/struct.h"
+#include "pbl/util/struct.h"
 
 // Private API
 ////////////////////////////////////
@@ -43,7 +39,7 @@ static WindowStackItem *prv_find_window_stack_item_for_window(WindowStack *windo
   }
 
   WindowStackItem *item = (WindowStackItem *)list_find(window_stack->list_head,
-      prv_filter_window_item_for_window, window);
+                                                       prv_filter_window_item_for_window, window);
 
   return item;
 }
@@ -91,6 +87,9 @@ static void prv_unload_removed_windows(WindowStack *window_stack) {
       context->window_from = NULL;
     }
 
+    // Reset the recognizer manager before the window is destroyed so it drops any dangling pointer
+    window_lost_input_focus(items_to_unload[i]->window);
+
     window_unload(items_to_unload[i]->window);
     applib_free(items_to_unload[i]);
   }
@@ -116,7 +115,7 @@ static void prv_transition_to(Window *window_from, Window *window_to,
     }
   }
 
-  *context = (WindowTransitioningContext) {
+  *context = (WindowTransitioningContext){
     .window_to = window_to,
     .window_to_last_x = INT16_MAX,
     .window_from = window_from,
@@ -166,7 +165,7 @@ static void prv_push_inserter(WindowStackItem *stack_item) {
 }
 
 static void prv_insert_with_function(WindowStack *window_stack_to, Window *window,
-                                     void(*inserter)(WindowStackItem *),
+                                     void (*inserter)(WindowStackItem *),
                                      const WindowTransitionImplementation *transition_insert,
                                      const WindowTransitionImplementation *transition_pop) {
   PBL_ASSERTN(window_stack_to);
@@ -193,8 +192,8 @@ static void prv_insert_with_function(WindowStack *window_stack_to, Window *windo
   // If on the list of removed items for a window stack, remove from the removed items list
   // as we want to add it back to the window stack.
   if (window_stack_from) {
-    ListNode *node = list_find(window_stack_from->removed_list_head,
-        prv_filter_window_item_for_window, window);
+    ListNode *node =
+        list_find(window_stack_from->removed_list_head, prv_filter_window_item_for_window, window);
     if (node != NULL) {
       list_remove(node, &window_stack_from->removed_list_head, NULL);
     }
@@ -211,7 +210,7 @@ static void prv_insert_with_function(WindowStack *window_stack_to, Window *windo
     // on the heap.
     item = applib_type_malloc(WindowStackItem);
 
-    *item = (WindowStackItem) {
+    *item = (WindowStackItem){
       .window = window,
       .pop_transition_implementation = transition_pop,
     };
@@ -223,8 +222,8 @@ static void prv_insert_with_function(WindowStack *window_stack_to, Window *windo
     prv_transition_to(window_from, window, transition_insert);
   }
 
-  PBL_LOG_DBG("(+) %s=%p <%s>", is_app_window ? "window" : "modal window",
-      window, window_get_debug_name(window));
+  PBL_LOG_DBG("(+) %s=%p <%s>", is_app_window ? "window" : "modal window", window,
+              window_get_debug_name(window));
 }
 
 static Window *prv_remove_item(WindowStackItem *pop_item,
@@ -260,14 +259,14 @@ static Window *prv_remove_item(WindowStackItem *pop_item,
   Window *window_to = stack_item ? stack_item->window : NULL;
 
   // Add the removed item to the 'removed' list
-  window_stack->removed_list_head = list_insert_before(window_stack->removed_list_head,
-      &pop_item->list_node);
+  window_stack->removed_list_head =
+      list_insert_before(window_stack->removed_list_head, &pop_item->list_node);
 
   // Store the window here, as we're potentially free'ing the item later on.
   Window *pop_item_window = pop_item->window;
   bool is_app_window = window_manager_is_app_window(pop_item_window);
-  PBL_LOG_DBG("(-) %s=%p <%s>", is_app_window ? "window" : "modal window",
-      pop_item_window, window_get_debug_name(pop_item_window));
+  PBL_LOG_DBG("(-) %s=%p <%s>", is_app_window ? "window" : "modal window", pop_item_window,
+              window_get_debug_name(pop_item_window));
 
   // Only animate if the window was previously at the top of the stack and there's a
   // window we can transition to.
@@ -297,11 +296,11 @@ Window *window_stack_get_top_window(WindowStack *window_stack) {
 
 void window_stack_push(WindowStack *window_stack, Window *window, bool animated) {
   const WindowTransitionImplementation *transition_insert =
-      animated ? window_transition_get_default_push_implementation() :
-                 &g_window_transition_none_implementation;
+      animated ? window_transition_get_default_push_implementation()
+               : &g_window_transition_none_implementation;
   const WindowTransitionImplementation *transition_pop =
-      animated ? window_transition_get_default_pop_implementation() :
-                 &g_window_transition_none_implementation;
+      animated ? window_transition_get_default_pop_implementation()
+               : &g_window_transition_none_implementation;
 
   window_stack_push_with_transition(window_stack, window, transition_insert, transition_pop);
 }
@@ -369,8 +368,8 @@ void window_stack_pop_all(WindowStack *window_stack, const bool animated) {
     }
     list_remove(&next_item->list_node, &window_stack->list_head, NULL);
 
-    window_stack->removed_list_head = list_insert_before(window_stack->removed_list_head,
-                                                         &next_item->list_node);
+    window_stack->removed_list_head =
+        list_insert_before(window_stack->removed_list_head, &next_item->list_node);
 
     window_set_on_screen(next_item->window, false /* not new */, true /* call handlers */);
   } while (true);
@@ -383,15 +382,15 @@ bool window_stack_remove(Window *window, bool animated) {
     return false;
   }
 
-  WindowStackItem *item = prv_find_window_stack_item_for_window(window->parent_window_stack,
-      window);
+  WindowStackItem *item =
+      prv_find_window_stack_item_for_window(window->parent_window_stack, window);
   if (item == NULL) {
     return false;
   }
 
   const WindowTransitionImplementation *transition =
-      animated ? window_transition_get_default_pop_implementation() :
-                 &g_window_transition_none_implementation;
+      animated ? window_transition_get_default_pop_implementation()
+               : &g_window_transition_none_implementation;
 
   window = prv_remove_item(item, transition);
   return window != NULL;
@@ -437,9 +436,8 @@ bool window_stack_is_animating(WindowStack *window_stack) {
 
 bool window_stack_is_animating_with_fixed_status_bar(WindowStack *window_stack) {
   WindowTransitioningContext *context = &window_stack->transition_context;
-  return window_stack_is_animating(window_stack) &&
-      window_has_status_bar(context->window_from) &&
-      window_has_status_bar(context->window_to);
+  return window_stack_is_animating(window_stack) && window_has_status_bar(context->window_from) &&
+         window_has_status_bar(context->window_to);
 }
 
 // Transitioning Context Functions
@@ -449,7 +447,7 @@ bool window_stack_is_animating_with_fixed_status_bar(WindowStack *window_stack) 
 
 bool window_transition_context_has_legacy_window_to(WindowStack *stack, Window *window) {
   return (stack->transition_context.window_to == window) &&
-      process_manager_compiled_with_legacy2_sdk();
+         process_manager_compiled_with_legacy2_sdk();
 }
 
 void window_transition_context_disappear(WindowTransitioningContext *context) {
@@ -484,6 +482,21 @@ void window_transition_context_appear(WindowTransitioningContext *context) {
     // Either this or app_click_config_setup_with_window should be calling
     // window_setup_click_config_provider instead
     app_click_config_setup_with_window(click_manager, window_to);
+
+#ifdef CONFIG_TOUCH
+    if (window_stack_is_animating(window_to->parent_window_stack)) {
+      // The appear hook fires at the start of the transition and there is no end-of-transition
+      // hook. Drop any in-flight gesture but keep the window bound so navigation still works when
+      // the animation settles.
+      RecognizerManager *manager = window_get_recognizer_manager(window_to);
+      if (manager) {
+        recognizer_manager_set_window(manager, window_to);
+        recognizer_manager_cancel_and_reset(manager);
+      }
+    } else {
+      window_became_input_focus(window_to);
+    }
+#endif
   }
 }
 
@@ -499,7 +512,7 @@ size_t window_stack_dump(WindowStack *stack, WindowStackDump **dump) {
     if (*dump) {
       WindowStackItem *item = (WindowStackItem *)stack->list_head;
       while (item) {
-        (*dump)[idx++] = (WindowStackDump) {
+        (*dump)[idx++] = (WindowStackDump){
           .addr = item->window,
           .name = window_get_debug_name(item->window),
         };

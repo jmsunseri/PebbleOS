@@ -1,9 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <stdbool.h>
-#include "applib/accel_service.h"
 #include "util/time/time.h"
-
 
 // ---------------------------------------------------------------------------------------------
 // Equates
@@ -40,7 +38,7 @@ typedef enum {
   // A restful period, these will always be inside of a ActivityType_Sleep session
   KAlgActivityType_RestfulSleep,
 
-  // A "sigificant" length walk
+  // A "significant" length walk
   KAlgActivityType_Walk,
 
   // A run
@@ -93,6 +91,10 @@ uint32_t kalg_state_size(void);
 //  statistics that are computed.
 bool kalg_init(KAlgState *state, KAlgStatsCallback stats_cb);
 
+// Release resources held by the state. Must be called before freeing it.
+// @param[in] state the state structure passed into kalg_init
+void kalg_deinit(KAlgState *state);
+
 // Analyze a set of accel samples
 // @param[in] state the state structure passed into kalg_init
 // @param[in] samples array of accel samples
@@ -137,8 +139,8 @@ uint32_t kalg_analyze_finish_epoch(KAlgState *state);
 // @param[in] context passed to the sessions_cb
 void kalg_activities_update(KAlgState *state, time_t utc_now, uint16_t steps, uint16_t vmc,
                             uint8_t orientation, bool definitely_not_worn,
-                            uint32_t resting_calories,
-                            uint32_t active_calories, uint32_t distance_mm, bool shutting_down,
+                            uint32_t resting_calories, uint32_t active_calories,
+                            uint32_t distance_mm, bool shutting_down,
                             KAlgActivitySessionCallback sessions_cb, void *context);
 
 // Return the timestamp of the last minute that was processed for the given activity type
@@ -151,5 +153,13 @@ time_t kalg_activity_last_processed_time(KAlgState *state, KAlgActivityType acti
 void kalg_get_sleep_stats(KAlgState *state, KAlgOngoingSleepStats *stats);
 
 //! Tells the algorithm whether or not it should automatically track activities
+//! @param kalg_state the state structure passed into kalg_init
 //! @param enable true to start tracking, false to stop tracking
 void kalg_enable_activity_tracking(KAlgState *kalg_state, bool enable);
+
+//! @return true if a continuous HRM session is currently active for a detected activity
+bool kalg_activity_hrm_is_active(KAlgState *kalg_state);
+
+//! Pause or resume the continuous activity HRM session(s) by idling / restoring their update
+//! interval. Used to free the shared optical path for a periodic SpO2 reading during an activity.
+void kalg_activity_hrm_set_paused(KAlgState *kalg_state, bool paused);

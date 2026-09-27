@@ -4,17 +4,17 @@
               "You should also make sure you are obeying our API design guidelines:",
               "https://pebbletechnology.atlassian.net/wiki/display/DEV/SDK+API+Design+Guidelines"
             ],
-  "revision" : "104",
+  "revision" : "109",
   "version" : "2.0",
   "files": [
-    "fw/drivers/ambient_light.h",
-    "fw/drivers/button_id.h",
+    "include/pbl/drivers/ambient_light.h",
+    "include/pbl/drivers/button_id.h",
     "fw/system/status_codes.h",
     "fw/util/dict.h",
-    "libutil/includes/util/list.h",
-    "libutil/includes/util/math.h",
-    "libutil/includes/util/size.h",
-    "libutil/includes/util/trig.h",
+    "include/pbl/util/list.h",
+    "include/pbl/util/math.h",
+    "include/pbl/util/size.h",
+    "include/pbl/util/trig.h",
     "fw/util/time/time.h",
     "fw/applib/accel_service.h",
     "fw/applib/app.h",
@@ -31,17 +31,7 @@
     "fw/applib/app_worker.h",
     "fw/applib/backlight_service.h",
     "fw/applib/battery_state_service.h",
-    "fw/applib/bluetooth/ble_ad_parse.h",
-    "fw/applib/bluetooth/ble_central.h",
-    "fw/applib/bluetooth/ble_characteristic.h",
-    "fw/applib/bluetooth/ble_client.h",
-    "fw/applib/bluetooth/ble_descriptor.h",
-    "fw/applib/bluetooth/ble_ibeacon.h",
-    "fw/applib/bluetooth/ble_scan.h",
-    "fw/applib/bluetooth/ble_service.h",
-    "include/bluetooth/bluetooth_types.h",
-    "libbtutil/include/btutil/bt_device.h",
-    "libbtutil/include/btutil/bt_uuid.h",
+    "fw/applib/alarm_service.h",
     "fw/applib/compass_service.h",
     "fw/applib/connection_service.h",
     "fw/applib/data_logging.h",
@@ -62,10 +52,10 @@
     "fw/applib/pbl_std/locale.h",
     "fw/applib/persist.h",
     "fw/applib/worker.h",
-    "libutil/includes/util/uuid.h",
+    "include/pbl/util/uuid.h",
     "fw/process_management/app_manager.h",
     "fw/process_management/sdk_shims.h",
-    "fw/drivers/mag.h",
+    "include/pbl/drivers/mag.h",
     "fw/applib/fonts/fonts.h",
     "fw/applib/graphics/gcontext.h",
     "fw/applib/graphics/gtypes.h",
@@ -119,6 +109,10 @@
     "include/pbl/services/speaker/speaker_finish_reason.h",
     "include/pbl/services/speaker/speaker_pcm_format.h",
     "include/pbl/services/speaker/track.h",
+    "fw/applib/ui/recognizer/recognizer.h",
+    "fw/applib/ui/recognizer/tap.h",
+    "fw/applib/ui/recognizer/pan.h",
+    "fw/applib/ui/recognizer/swipe.h",
     "fw/applib/ui/window.h",
     "fw/applib/ui/app_window_stack.h",
     "fw/applib/legacy2/ui/animation_legacy2.h",
@@ -308,6 +302,15 @@
           "name": "EventService",
           "exports": [
             {
+              "type": "group",
+              "name": "AlarmService",
+              "exports": [
+                { "type": "function",
+                  "name": "alarm_service_peek_next",
+                  "addedRevision": "105"
+                }
+              ]
+            }, {
               "type": "group",
               "name": "ConnectionService",
               "exports": [
@@ -610,6 +613,10 @@
                   "type": "function",
                   "name": "touch_service_is_enabled",
                   "addedRevision": "95"
+                }, {
+                  "type": "function",
+                  "name": "app_touch_navigation_enable",
+                  "addedRevision": "108"
                 }
               ]
             }, {
@@ -1031,339 +1038,6 @@
             }, {
               "type": "define",
               "name": "PBL_IF_MICROPHONE_ELSE"
-            }
-          ]
-        }, {
-          "type": "group",
-          "name": "BLE Bluetooth Low Energy",
-          "appOnly": true,
-          "internal": true,
-          "exports": [
-            {
-              "type": "type",
-              "name": "BLEService",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BLECharacteristic",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BLEDescriptor",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BLESubscription",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BLEAttributeProperty",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BTErrno",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BLEGATTError",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BTDeviceAddress",
-              "internal": true
-            }, {
-              "type": "define",
-              "name": "BT_DEVICE_ADDRESS_SIZE",
-              "internal": true
-            }, {
-              "type": "define",
-              "name": "BT_DEVICE_ADDRESS_FMT",
-              "internal": true
-            }, {
-              "type": "define",
-              "name": "BT_DEVICE_ADDRESS_XPLODE",
-              "internal": true
-            }, {
-              "type": "define",
-              "name": "BLE_SERVICE_INVALID",
-              "internal": true
-            }, {
-              "type": "define",
-              "name": "BLE_CHARACTERISTIC_INVALID",
-              "internal": true
-            }, {
-              "type": "define",
-              "name": "BLE_DESCRIPTOR_INVALID",
-              "internal": true
-            }, {
-              "type": "define",
-              "name": "BT_DEVICE_INVALID",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BTDevice",
-              "internal": true
-            }, {
-              "type": "forward_struct",
-              "name": "BLEAdData",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_ad_includes_service",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_ad_copy_service_uuids",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_ad_get_tx_power_level",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_ad_copy_local_name",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_ad_copy_manufacturer_specific_data",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_ad_get_raw_data_size",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_ad_copy_raw_data",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BLEScanHandler",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_scan_start",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_scan_stop",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_scan_is_scanning",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "bt_device_address_equal",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "bt_device_equal",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "bt_uuid_expand_16bit",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "bt_uuid_expand_32bit",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "bt_device_init_with_address",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "bt_device_get_address",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BLEConnectionHandler",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_central_set_connection_handler",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_central_connect",
-              "implName": "sys_ble_central_connect",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_central_cancel_connect",
-              "implName": "sys_ble_central_cancel_connect",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BLEClientServiceChangeUpdate",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BLEClientServiceChangeHandler",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_client_set_service_change_handler",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_client_set_service_filter",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_client_discover_services_and_characteristics",
-              "implName": "sys_ble_client_discover_services_and_characteristics",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BLEClientReadHandler",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_client_set_read_handler",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BLEClientWriteHandler",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_client_set_write_response_handler",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BLEClientSubscribeHandler",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_client_set_subscribe_handler",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BLEClientReadDescriptorHandler",
-              "internal": true
-            }, {
-              "type": "type",
-              "name": "BLEClientWriteDescriptorHandler",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_client_set_descriptor_write_handler",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_client_set_descriptor_read_handler",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_client_write_descriptor",
-              "implName": "sys_ble_client_write_descriptor",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_client_read_descriptor",
-              "implName": "sys_ble_client_read_descriptor",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_service_get_characteristics",
-              "implName": "sys_ble_service_get_characteristics",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_service_get_uuid",
-              "implName": "sys_ble_service_get_uuid",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_service_get_device",
-              "implName": "sys_ble_service_get_device",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_service_get_included_services",
-              "implName": "sys_ble_service_get_included_services",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_characteristic_get_uuid",
-              "implName": "sys_ble_characteristic_get_uuid",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_characteristic_get_properties",
-              "implName": "sys_ble_characteristic_get_properties",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_characteristic_is_readable",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_characteristic_is_writable",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_characteristic_is_subscribable",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_characteristic_is_notifiable",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_characteristic_is_indicatable",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_characteristic_get_service",
-              "implName": "sys_ble_characteristic_get_service",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_characteristic_get_device",
-              "implName": "sys_ble_characteristic_get_device",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_characteristic_get_descriptors",
-              "implName": "sys_ble_characteristic_get_descriptors",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_descriptor_get_uuid",
-              "implName": "sys_ble_descriptor_get_uuid",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_descriptor_get_characteristic",
-              "implName": "sys_ble_descriptor_get_characteristic",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_client_get_maximum_value_length",
-              "implName": "sys_ble_client_get_maximum_value_length",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_client_read",
-              "implName": "sys_ble_client_read",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_client_write",
-              "implName": "sys_ble_client_write",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_client_write_without_response",
-              "implName": "sys_ble_client_write_without_response",
-              "internal": true
-            }, {
-              "type": "function",
-              "name": "ble_client_subscribe",
-              "implName": "sys_ble_client_subscribe",
-              "internal": true
             }
           ]
         }, {
@@ -2948,6 +2622,88 @@
           ]
         }, {
           "type": "group",
+          "name": "Recognizer",
+          "appOnly": true,
+          "exports": [
+            {
+              "type": "forward_struct",
+              "name": "Recognizer"
+            }, {
+              "type": "type",
+              "name": "RecognizerEvent",
+              "addedRevision": "107"
+            }, {
+              "type": "type",
+              "name": "RecognizerEventCb",
+              "addedRevision": "107"
+            }, {
+              "type": "type",
+              "name": "RecognizerSimultaneousWithCb",
+              "addedRevision": "107"
+            }, {
+              "type": "type",
+              "name": "PanAxis",
+              "addedRevision": "107"
+            }, {
+              "type": "type",
+              "name": "SwipeDirection",
+              "addedRevision": "107"
+            }, {
+              "type": "function",
+              "name": "tap_recognizer_create",
+              "addedRevision": "107"
+            }, {
+              "type": "function",
+              "name": "pan_recognizer_create",
+              "addedRevision": "107"
+            }, {
+              "type": "function",
+              "name": "swipe_recognizer_create",
+              "addedRevision": "107"
+            }, {
+              "type": "function",
+              "name": "tap_recognizer_get_tap_point",
+              "addedRevision": "107"
+            }, {
+              "type": "function",
+              "name": "pan_recognizer_get_total_delta",
+              "addedRevision": "107"
+            }, {
+              "type": "function",
+              "name": "pan_recognizer_get_delta_since_start",
+              "addedRevision": "107"
+            }, {
+              "type": "function",
+              "name": "pan_recognizer_get_delta_since_prev",
+              "addedRevision": "107"
+            }, {
+              "type": "function",
+              "name": "pan_recognizer_get_velocity",
+              "addedRevision": "107"
+            }, {
+              "type": "function",
+              "name": "swipe_recognizer_get_direction",
+              "addedRevision": "107"
+            }, {
+              "type": "function",
+              "name": "swipe_recognizer_get_velocity",
+              "addedRevision": "107"
+            }, {
+              "type": "function",
+              "name": "recognizer_destroy",
+              "addedRevision": "107"
+            }, {
+              "type": "function",
+              "name": "recognizer_set_simultaneous_with",
+              "addedRevision": "107"
+            }, {
+              "type": "function",
+              "name": "recognizer_set_fail_after",
+              "addedRevision": "107"
+            }
+          ]
+        }, {
+          "type": "group",
           "name": "Window",
           "exports": [
             {
@@ -2983,6 +2739,18 @@
               "type": "function",
               "name": "window_get_click_config_context",
               "addedRevision": "11"
+            }, {
+              "type": "function",
+              "name": "window_attach_recognizer",
+              "addedRevision": "107"
+            }, {
+              "type": "function",
+              "name": "window_detach_recognizer",
+              "addedRevision": "107"
+            }, {
+              "type": "function",
+              "name": "window_set_touch_bridge_disabled",
+              "addedRevision": "107"
             }, {
               "type": "function",
               "name": "window_set_window_handlers",
@@ -4941,7 +4709,14 @@
       "skipDefinition": true,
       "implName": "pbl_localeconv_r",
       "addedRevision": "27"
-
+    }, {
+      "type": "function",
+      "name": "health_service_peek_hrv_ppi_ms",
+      "addedRevision": "109"
+    }, {
+      "type": "function",
+      "name": "health_service_set_hrv_sample_period",
+      "addedRevision": "109"
     }
   ],
   "fonts": [

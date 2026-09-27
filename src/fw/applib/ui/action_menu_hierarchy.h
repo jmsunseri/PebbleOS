@@ -18,13 +18,12 @@
 //! @param context the context passed to the action menu
 //! @note the action menu is closed immediately after an action is performed,
 //! unless it is frozen in the ActionMenuPerformActionCb
-typedef void (*ActionMenuPerformActionCb)(ActionMenu *action_menu,
-                                          const ActionMenuItem *action,
+typedef void (*ActionMenuPerformActionCb)(ActionMenu *action_menu, const ActionMenuItem *action,
                                           void *context);
 
 //! Callback invoked for each item in an action menu hierarchy.
 //! @param item the current action menu item
-//! @param a caller-provided context callback
+//! @param context a caller-provided callback context
 typedef void (*ActionMenuEachItemCb)(const ActionMenuItem *item, void *context);
 
 //! enum value that controls whether menu items are displayed in a grid
@@ -39,7 +38,7 @@ typedef enum {
 //! @return a pointer to the string label. NULL if invalid.
 char *action_menu_item_get_label(const ActionMenuItem *item);
 
-//! Getter for the action_data pointer of a given \ref ActionMenuitem.
+//! Getter for the action_data pointer of a given \ref ActionMenuItem.
 //! @see action_menu_level_add_action
 //! @param item the \ref ActionMenuItem of interest
 //! @return a pointer to the data. NULL if invalid.
@@ -65,18 +64,15 @@ void action_menu_level_set_display_mode(ActionMenuLevel *level,
 //! @param cb the callback that will be triggered when this action is actuated
 //! @param action_data data to pass to the callback for this action
 //! @return a reference to the new \ref ActionMenuItem on success, NULL if the level is full
-ActionMenuItem *action_menu_level_add_action(ActionMenuLevel *level,
-                                             const char *label,
-                                             ActionMenuPerformActionCb cb,
-                                             void *action_data);
+ActionMenuItem *action_menu_level_add_action(ActionMenuLevel *level, const char *label,
+                                             ActionMenuPerformActionCb cb, void *action_data);
 
 //! Add a child to this ActionMenuLevel
 //! @param level the parent level
 //! @param child the child level
 //! @param label the text to display in the action menu for this level
 //! @return a reference to the new \ref ActionMenuItem on success, NULL if the level is full
-ActionMenuItem *action_menu_level_add_child(ActionMenuLevel *level,
-                                            ActionMenuLevel *child,
+ActionMenuItem *action_menu_level_add_child(ActionMenuLevel *level, ActionMenuLevel *child,
                                             const char *label);
 
 //! Destroy a hierarchy of ActionMenuLevels
@@ -87,8 +83,7 @@ ActionMenuItem *action_menu_level_add_child(ActionMenuLevel *level,
 //!       associated with each item in the callback
 //! @note Hierarchy is traversed in post-order.
 //!       In other words, all children items are freed before their parent is freed.
-void action_menu_hierarchy_destroy(const ActionMenuLevel *root,
-                                   ActionMenuEachItemCb each_cb,
+void action_menu_hierarchy_destroy(const ActionMenuLevel *root, ActionMenuEachItemCb each_cb,
                                    void *context);
 
 //!   @} // end addtogroup ActionMenu

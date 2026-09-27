@@ -6,13 +6,12 @@
 #include "applib/app_timer.h"
 #include "applib/ui/property_animation.h"
 #include "applib/ui/dialogs/expandable_dialog.h"
-#include "applib/ui/window_stack.h"
 
 #include <stdint.h>
 #include <stdbool.h>
 
 //! Callback from the dialog
-typedef void(*TranscriptionConfirmationCallback)(void *callback_context);
+typedef void (*TranscriptionConfirmationCallback)(void *callback_context);
 
 typedef struct TranscriptionDialog {
   ExpandableDialog e_dialog;
@@ -63,13 +62,13 @@ void transcription_dialog_pop(TranscriptionDialog *transcription_dialog);
 //! @param transcription The text to display
 //! @param transcription_len The length of the text in the transcription
 void transcription_dialog_update_text(TranscriptionDialog *transcription_dialog,
-                                       char *transcription, uint16_t transcription_len);
+                                      char *transcription, uint16_t transcription_len);
 
 //! Sets the callback that is called if the user confirms that the text
 //! being displayed is what they intended.
 //! @param transcription_dialog Pointer to the \ref TranscriptionDialog to set
 //! @param callback The \ref TranscriptionConfirmationCallback to call if the user confirms text
-//! @param callback_context The \ref callback_context to pass to the confirmation handler
+//! @param callback_context The @c callback_context to pass to the confirmation handler
 //! @note If the callback_context is NULL, then the \ref TranscriptionDialog will be passed
 //!     the callback handler.
 void transcription_dialog_set_callback(TranscriptionDialog *transcription_dialog,

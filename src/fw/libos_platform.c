@@ -2,22 +2,19 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "kernel/pbl_malloc.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
-
-#include <stdio.h>
-#include <stdlib.h>
+#include "pbl/kernel/compiler.h"
 
 void os_log(const char *filename, int line, const char *string) {
   pbl_log(LOG_LEVEL_INFO, filename, line, string);
 }
 
-NORETURN os_assertion_failed(const char *filename, int line) {
+PBL_NORETURN void os_assertion_failed(const char *filename, int line) {
   passert_failed_no_message(filename, line);
 }
 
-NORETURN os_assertion_failed_lr(const char *filename, int line, uint32_t lr) {
+PBL_NORETURN void os_assertion_failed_lr(const char *filename, int line, uint32_t lr) {
   passert_failed_no_message_with_lr(filename, line, lr);
 }
 

@@ -9,10 +9,10 @@
 
 #define ATTRIBUTE_ICON_LARGE_SIZE_PX 80
 #define ATTRIBUTE_ICON_SMALL_SIZE_PX 50
-#define ATTRIBUTE_ICON_TINY_SIZE_PX 25
+#define ATTRIBUTE_ICON_TINY_SIZE_PX  25
 
-#define ATTRIBUTE_TITLE_MAX_LEN 64
-#define ATTRIBUTE_SUBTITLE_MAX_LEN 64
+#define ATTRIBUTE_TITLE_MAX_LEN               64
+#define ATTRIBUTE_SUBTITLE_MAX_LEN            64
 #define ATTRIBUTE_APP_GLANCE_SUBTITLE_MAX_LEN (150)
 
 #define Uint32ListSize(num_values) (sizeof(Uint32List) + (num_values) * sizeof(uint32_t))
@@ -111,12 +111,18 @@ typedef enum {
   AttributeIdSubtitleTemplateString = 47,
   //! Generic icon.
   AttributeIdIcon = 48,
-  //! (Uint32List) Custom vibration pattern for a notification, used with vibes_enqueue_custom_pattern
+  //! (Uint32List) Custom vibration pattern for a notification, used with
+  //! vibes_enqueue_custom_pattern
   AttributeIdVibrationPattern = 49,
   //! (uint32_t) Timestamp when the mute should expire.
   AttributeIdMuteExpiration = 50,
   //! (StringList) Notification filtering rules encoded as a byte array.
   AttributeIdNotificationFilteringRules = 51,
+  //! (uint8_t) The phone holds an image for this item, fetchable over the imaging endpoint
+  //! (ImagingImageTypeNotification, keyed by the item's UUID). The value is the image's
+  //! height/width in sixteenths, so the card can reserve a band of the right shape before the
+  //! pixels arrive. Absent or 0 means no image.
+  AttributeIdImageAspectRatio = 52,
   NumAttributeIds,
 } AttributeId;
 
@@ -166,8 +172,8 @@ bool attribute_copy(Attribute *dest, const Attribute *src, uint8_t **buffer,
 //! in the "out" list in a contiguous region of memory given by buffer
 //! @param out a pointer to the destination attribute list
 //! @param in a pointer to the source attribute list
-//! @param buffer a pointer to a region of memory at least \ref attribute_list_get_buffer_size(in)
-//! bytes
+//! @param buffer a pointer to a region of memory at least
+//! \ref attribute_list_get_buffer_size "attribute_list_get_buffer_size(in)" bytes
 //! @param buffer_end a pointer to the end of the buffer
 //! @return true if successful, false if buffer was not large enough
 bool attribute_list_copy(AttributeList *out, const AttributeList *in, uint8_t *buffer,
@@ -202,9 +208,8 @@ void attribute_list_add_uint32(AttributeList *list, AttributeId id, uint32_t uin
 //! Append an attribute or replace an existing one in an attribute list.
 //! @param list pointer to the attribute list
 //! @param id AttributeID of the attribute to add
-//! @param TimelineResourceId value to store as the content of the attribute
-void attribute_list_add_resource_id(AttributeList *list, AttributeId id,
-                                    uint32_t resource_id);
+//! @param resource_id value to store as the content of the attribute
+void attribute_list_add_resource_id(AttributeList *list, AttributeId id, uint32_t resource_id);
 
 //! Append an attribute or replace an existing one in an attribute list.
 //! @param list pointer to the attribute list
@@ -238,7 +243,7 @@ void attribute_list_add_attribute(AttributeList *list, const Attribute *new_attr
 
 //! Initializes an attribute list.
 //! @param num_attributes Number of attributes to initialize for this list
-//! @param list the attribute list to initialize
+//! @param list_out the attribute list to initialize
 void attribute_list_init_list(uint8_t num_attributes, AttributeList *list_out);
 
 //! Destroy an attribute list.
@@ -258,8 +263,8 @@ Attribute *attribute_find(const AttributeList *attr_list, AttributeId id);
 //! @param id the attribute id of the desired attribute
 //! @param default_value the value to return if not found
 //! @return a pointer to the string, default_value if not found
-const char *attribute_get_string(const AttributeList *attr_list,
-    AttributeId id, char *default_value);
+const char *attribute_get_string(const AttributeList *attr_list, AttributeId id,
+                                 char *default_value);
 
 //! Find a string list attribute in an attribute list by attribute ID
 //! @param attr_list a pointer to an attribute list
@@ -272,16 +277,15 @@ StringList *attribute_get_string_list(const AttributeList *attr_list, AttributeI
 //! @param id the attribute id of the desired attribute
 //! @param default_value the value to return if not found
 //! @return the uint8 attribute value, default_value if not found
-uint8_t attribute_get_uint8(const AttributeList *attr_list,
-    AttributeId id, uint8_t default_value);
+uint8_t attribute_get_uint8(const AttributeList *attr_list, AttributeId id, uint8_t default_value);
 
 //! Find a uint32 attribute in a list by attribute ID
 //! @param attr_list a pointer to an attribute list
 //! @param id the attribute id of the desired attribute
 //! @param default_value the value to return if not found
 //! @return the uint32 attribute value, default_value if not found
-uint32_t attribute_get_uint32(const AttributeList *attr_list,
-    AttributeId id, uint32_t default_value);
+uint32_t attribute_get_uint32(const AttributeList *attr_list, AttributeId id,
+                              uint32_t default_value);
 
 //! Find a Uint32List attribute in a list by attribute id
 //! @param attr_list a pointer to an attribute list
@@ -293,7 +297,7 @@ Uint32List *attribute_get_uint32_list(const AttributeList *attr_list, AttributeI
 //! @param attr_list a pointer to the list of attributes to serialize
 //! @param buffer a pointer to the buffer to write to
 //! @param buf_end the end of buffer
-//! @retuns the number of serialized bytes
+//! @returns the number of serialized bytes
 size_t attribute_list_serialize(const AttributeList *attr_list, uint8_t *buffer, uint8_t *buf_end);
 
 //! Calculate the required size for a buffer to store a list of attributes
@@ -301,12 +305,13 @@ size_t attribute_list_get_serialized_size(const AttributeList *attr_list);
 
 //! Check whether a serialized list is well-formed and output which attributes it contains
 bool attribute_check_serialized_list(const uint8_t *cursor, const uint8_t *val_end,
-    uint8_t num_attributes, bool has_attribute[]);
+                                     uint8_t num_attributes, bool has_attribute[]);
 
 //! number of required bytes for in-memory representation of a list of a serialized attributes
 int32_t attribute_get_buffer_size_for_serialized_attributes(uint8_t num_attributes,
-    const uint8_t **cursor, const uint8_t *end);
+                                                            const uint8_t **cursor,
+                                                            const uint8_t *end);
 
 //! true, if successfully transforms a serialized attribute into in-memory representation
-bool attribute_deserialize_list(char **buffer, char *const buf_end,
-    const uint8_t **cursor, const uint8_t *payload_end, AttributeList attr_list);
+bool attribute_deserialize_list(char **buffer, char *const buf_end, const uint8_t **cursor,
+                                const uint8_t *payload_end, AttributeList attr_list);

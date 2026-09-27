@@ -1,5 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Core Devices LLC
 # SPDX-License-Identifier: Apache-2.0
 
-config BOARD_FAMILY_NAME
-    default "getafix"
+
+# The MFG microphone test uses Speex's kiss_fft.
+config SPEEX
+    default y if RECOVERY_FW

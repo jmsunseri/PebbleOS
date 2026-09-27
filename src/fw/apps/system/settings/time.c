@@ -7,9 +7,6 @@
 #include "window.h"
 
 #include "applib/app.h"
-#include "applib/applib_resource.h"
-#include "applib/fonts/fonts.h"
-#include "applib/graphics/text.h"
 #include "applib/ui/action_menu_window_private.h"
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/date_selection_window.h"
@@ -17,17 +14,16 @@
 #include "applib/ui/time_selection_window.h"
 #include "applib/ui/ui.h"
 #include "kernel/pbl_malloc.h"
-#include "process_management/app_manager.h"
 #include "util/date.h"
-#include "util/size.h"
 #include "util/time/time.h"
-#include "util/string.h"
+#include "pbl/util/string.h"
 
 #include "pbl/services/clock.h"
 #include "pbl/services/i18n/i18n.h"
 #include "pbl/services/timezone_database.h"
 #include "shell/prefs.h"
 
+#include <stdio.h>
 #include <time.h>
 
 // 9 (TZ) continents: Africa, America, Antarctica, Asia, Atlantic, Australia,
@@ -46,7 +42,7 @@ typedef struct {
   uint16_t region_count;
   uint16_t continent_selected;
   uint16_t continent_start[NUM_CONTINENTS + 1]; //!< First region id for the continent
-  uint16_t continent_end[NUM_CONTINENTS]; //!< Last+1 region id for the continent
+  uint16_t continent_end[NUM_CONTINENTS];       //!< Last+1 region id for the continent
 
   const char **continent_names;
   const char **region_names;
@@ -71,35 +67,39 @@ typedef enum {
   TimeRowNum,
 } TimeRow;
 
-//! Rows that remain visible when time source is automatic (Set Time and Set Date are hidden).
-static const TimeRow s_auto_visible_rows[] = {
-  TimeRow_TimeSource,
-  TimeRow_Format,
-  TimeRow_TimezoneSource,
-  TimeRow_Timezone,
-};
+//! Set Time and Set Date are hidden when the time source is automatic;
+//! Timezone is hidden when the timezone source is automatic.
+static bool prv_row_visible(TimeRow row) {
+  switch (row) {
+    case TimeRow_SetTime:
+    case TimeRow_SetDate:
+      return clock_time_source_is_manual();
+    case TimeRow_Timezone:
+      return clock_timezone_source_is_manual();
+    default:
+      return true;
+  }
+}
 
 //! Map a visible row index to its TimeRow enum value.
-//! When time source is automatic, Set Time and Set Date rows are hidden.
 static TimeRow prv_row_for_index(uint16_t index) {
-  if (clock_time_source_is_manual()) {
-    // All rows visible
-    return (TimeRow)index;
-  }
-  // Automatic mode: map through the reduced row list
-  if (index < ARRAY_LENGTH(s_auto_visible_rows)) {
-    return s_auto_visible_rows[index];
+  for (TimeRow row = 0; row < TimeRowNum; row++) {
+    if (prv_row_visible(row) && (index-- == 0)) {
+      return row;
+    }
   }
   return TimeRowNum;
 }
 
 static uint16_t prv_visible_row_count(void) {
-  if (clock_time_source_is_manual()) {
-    return TimeRowNum;
+  uint16_t count = 0;
+  for (TimeRow row = 0; row < TimeRowNum; row++) {
+    if (prv_row_visible(row)) {
+      count++;
+    }
   }
-  return ARRAY_LENGTH(s_auto_visible_rows);
+  return count;
 }
-
 
 // Timezone Window Setup
 ////////////////////////////
@@ -116,7 +116,7 @@ static void prv_format_region_name(char *region_name) {
 //! Initialize the continent and region names for the timezone windows
 static void prv_init_continent_and_region_names(SettingsTimeData *data) {
   const uint16_t region_count = data->region_count = timezone_database_get_region_count();
-  char * const region_names_buffer = app_zalloc_check(region_count * TIMEZONE_NAME_LENGTH);
+  char *const region_names_buffer = app_zalloc_check(region_count * TIMEZONE_NAME_LENGTH);
   char *cursor = region_names_buffer;
   char *last_cursor = cursor;
   const char **continent_names = app_zalloc_check(NUM_CONTINENTS * sizeof(char *));
@@ -184,9 +184,9 @@ static void prv_region_menu_push(SettingsTimeData *data) {
   };
   const int start_index = data->continent_start[data->continent_selected];
   const int end_index = data->continent_end[data->continent_selected];
-  settings_option_menu_push(
-      title, OptionMenuContentType_SingleLine, OPTION_MENU_CHOICE_NONE, &callbacks,
-      end_index - start_index, true /* icons_enabled */, &data->region_names[start_index], data);
+  settings_option_menu_push(title, OptionMenuContentType_SingleLine, OPTION_MENU_CHOICE_NONE,
+                            &callbacks, end_index - start_index, true /* icons_enabled */,
+                            &data->region_names[start_index], data);
 }
 
 // Timezone Continent Menu
@@ -200,10 +200,10 @@ static void prv_continent_menu_select(OptionMenu *option_menu, int selection, vo
 
 static void prv_continent_menu_push(SettingsTimeData *data) {
   const char *title = prv_get_timezone_title();
-  const OptionMenuCallbacks callbacks =  {
+  const OptionMenuCallbacks callbacks = {
     .select = prv_continent_menu_select,
   };
-  OptionMenu * const continent_menu = settings_option_menu_push(
+  OptionMenu *const continent_menu = settings_option_menu_push(
       title, OptionMenuContentType_SingleLine, OPTION_MENU_CHOICE_NONE, &callbacks, NUM_CONTINENTS,
       false /* icons_enabled */, data->continent_names, data);
   data->continent_window = &continent_menu->window;
@@ -262,7 +262,7 @@ static void prv_time_picker_push(SettingsTimeData *data) {
   const TimeSelectionWindowConfig config = {
     .label = i18n_noop("Set Time"),
     .color = PBL_IF_COLOR_ELSE(GColorJaegerGreen, GColorBlack),
-    .range = { .update = true, .enabled = false },
+    .range = {.update = true, .enabled = false},
     .callback = {
       .update = true,
       .complete = prv_time_picker_complete,
@@ -310,7 +310,7 @@ static void prv_date_picker_push(SettingsTimeData *data) {
 // Date & Time Menu
 ////////////////////////////
 static void prv_select_click_cb(SettingsCallbacks *context, uint16_t row) {
-  SettingsTimeData *data = (SettingsTimeData*) context;
+  SettingsTimeData *data = (SettingsTimeData *)context;
   switch (prv_row_for_index(row)) {
     case TimeRow_TimeSource:
       // Toggle automatic / manual time
@@ -319,21 +319,24 @@ static void prv_select_click_cb(SettingsCallbacks *context, uint16_t row) {
       return;
     case TimeRow_SetTime:
       prv_time_picker_push(data);
-      return;  // mark dirty happens via window unload callback
+      return; // mark dirty happens via window unload callback
     case TimeRow_SetDate:
       prv_date_picker_push(data);
-      return;  // mark dirty happens via window unload callback
+      return; // mark dirty happens via window unload callback
     case TimeRow_Format:
       // Set Time Display
       prv_cycle_clock_style();
       break;
     case TimeRow_TimezoneSource:
-      // Time settings (automatic / manual)
+      // Toggle automatic / manual timezone; the Timezone row is shown/hidden
       prv_cycle_clock_timezone_source();
-      break;
+      settings_menu_reload_data(SettingsMenuItemDateTime);
+      return;
     case TimeRow_Timezone:
-      // Set Timezone Region
-      PBL_ASSERTN(clock_timezone_source_is_manual());
+      // Set Timezone Region; row is hidden while source is automatic
+      if (!clock_timezone_source_is_manual()) {
+        return;
+      }
       prv_continent_menu_push(data);
       break;
     default:
@@ -342,29 +345,28 @@ static void prv_select_click_cb(SettingsCallbacks *context, uint16_t row) {
   settings_menu_mark_dirty(SettingsMenuItemDateTime);
 }
 
-static void prv_draw_row_cb(SettingsCallbacks *context, GContext *ctx,
-                            const Layer *cell_layer, uint16_t row, bool selected) {
-  SettingsTimeData *data = (SettingsTimeData*) context;
+static void prv_draw_row_cb(SettingsCallbacks *context, GContext *ctx, const Layer *cell_layer,
+                            uint16_t row, bool selected) {
+  SettingsTimeData *data = (SettingsTimeData *)context;
 
   const char *title = NULL;
   const char *subtitle = NULL;
   char current_timezone_region[TIMEZONE_NAME_LENGTH];
+  char tz_source_buf[TIMEZONE_NAME_LENGTH + 32];
   char time_buf[TIME_STRING_TIME_LENGTH];
   char date_buf[16];
 
   switch (prv_row_for_index(row)) {
     case TimeRow_TimeSource: {
       title = i18n_noop("Time Source");
-      subtitle = clock_time_source_is_manual() ? i18n_noop("Manual") :
-                                                 i18n_noop("Automatic");
+      subtitle = clock_time_source_is_manual() ? i18n_noop("Manual") : i18n_noop("Automatic");
       break;
     }
     case TimeRow_SetTime: {
       title = i18n_noop("Set Time");
       struct tm local_now;
       clock_get_time_tm(&local_now);
-      clock_format_time(time_buf, sizeof(time_buf),
-                        local_now.tm_hour, local_now.tm_min, true);
+      clock_format_time(time_buf, sizeof(time_buf), local_now.tm_hour, local_now.tm_min, true);
       subtitle = time_buf;
       break;
     }
@@ -383,8 +385,17 @@ static void prv_draw_row_cb(SettingsCallbacks *context, GContext *ctx,
     }
     case TimeRow_TimezoneSource: {
       title = i18n_noop("Timezone Source");
-      subtitle = clock_timezone_source_is_manual() ? i18n_noop("Manual") :
-                                                     i18n_noop("Automatic");
+      if (clock_timezone_source_is_manual()) {
+        subtitle = i18n_noop("Manual");
+      } else if (clock_is_timezone_set()) {
+        // Show the active timezone since the Timezone row is hidden
+        clock_get_timezone_region(current_timezone_region, TIMEZONE_NAME_LENGTH);
+        snprintf(tz_source_buf, sizeof(tz_source_buf), "%s (%s)", i18n_get("Automatic", data),
+                 current_timezone_region);
+        subtitle = tz_source_buf;
+      } else {
+        subtitle = i18n_noop("Automatic");
+      }
       break;
     }
     case TimeRow_Timezone: {
@@ -400,20 +411,12 @@ static void prv_draw_row_cb(SettingsCallbacks *context, GContext *ctx,
   menu_cell_basic_draw(ctx, cell_layer, i18n_get(title, data), i18n_get(subtitle, data), NULL);
 }
 
-static void prv_selection_will_change_cb(SettingsCallbacks *context, uint16_t *new_row,
-                                         uint16_t old_row) {
-  if (!clock_timezone_source_is_manual() &&
-      prv_row_for_index(*new_row) == TimeRow_Timezone) {
-    *new_row = old_row;
-  }
-}
-
 static uint16_t prv_num_rows_cb(SettingsCallbacks *context) {
   return prv_visible_row_count();
 }
 
 static void prv_deinit_cb(SettingsCallbacks *context) {
-  SettingsTimeData *data = (SettingsTimeData*) context;
+  SettingsTimeData *data = (SettingsTimeData *)context;
   i18n_free_all(data);
   app_free(data->continent_names);
   app_free(data->region_names);
@@ -427,12 +430,11 @@ static Window *prv_init(void) {
   SettingsTimeData *data = app_malloc_check(sizeof(*data));
   *data = (SettingsTimeData){};
 
-  data->callbacks = (SettingsCallbacks) {
+  data->callbacks = (SettingsCallbacks){
     .deinit = prv_deinit_cb,
     .draw_row = prv_draw_row_cb,
     .select_click = prv_select_click_cb,
     .num_rows = prv_num_rows_cb,
-    .selection_will_change = prv_selection_will_change_cb,
   };
 
   prv_init_continent_and_region_names(data);

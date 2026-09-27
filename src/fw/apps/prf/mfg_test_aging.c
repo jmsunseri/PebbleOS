@@ -13,40 +13,36 @@
 #include "applib/ui/window.h"
 #include "board/board.h"
 #include "console/console_internal.h"
-#include "drivers/accel.h"
-#include "drivers/ambient_light.h"
-#include "drivers/audio.h"
-#include "drivers/battery.h"
-#include "drivers/backlight.h"
-#include "drivers/mag.h"
-#include "drivers/vibe.h"
+#include <pbl/drivers/accel.h>
+#include <pbl/drivers/ambient_light.h>
+#include <pbl/drivers/audio.h>
+#include <pbl/drivers/battery.h>
+#include <pbl/drivers/backlight.h>
+#include <pbl/drivers/mag.h>
 #include "kernel/pbl_malloc.h"
-#include "kernel/util/sleep.h"
 #include "process_management/pebble_process_md.h"
 #include "process_state/app_state/app_state.h"
 #include "pbl/services/bluetooth/bluetooth_ctl.h"
 #include "pbl/services/light.h"
 #include "pbl/services/idle_watchdog.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
+#include "util/time/time.h"
 
-#include <stdio.h>
-
-#define STATUS_STRING_LEN 200
-#define COMPONENT_TEST_DURATION_SEC 10
+#define STATUS_STRING_LEN                200
+#define COMPONENT_TEST_DURATION_SEC      10
 #define COMPONENT_BACKLIGHT_DURATION_SEC 2
-#define COMPONENT_VIBE_DURATION_SEC 1
+#define COMPONENT_VIBE_DURATION_SEC      1
 
 // Charge + cycling phase parameters
-#define CHARGE_AND_CYCLE_DURATION_SEC (4 * 3600)  // 4 hours total
-#define CHARGE_TIMEOUT_SEC (90 * 60)              // Charge must reach target within 90min
-#define CHARGE_TARGET_PERCENT 100
-#define CHARGE_HOLD_MIN_PERCENT 99                // Tolerance for ADC noise after 100% reached
-#define TEMP_MIN_MC 15000                         // 15.0C
-#define TEMP_MAX_MC 35000                         // 35.0C
+#define CHARGE_AND_CYCLE_DURATION_SEC (4 * 3600) // 4 hours total
+#define CHARGE_TIMEOUT_SEC            (90 * 60)  // PMIC must report charge complete within 90min
+#define CHARGE_COMPLETE_MIN_PERCENT   99         // Min SoC to accept a PMIC charge-complete
+#define TEMP_MIN_MC                   15000      // 15.0C
+#define TEMP_MAX_MC                   35000      // 35.0C
 
 // Idle phase parameters
-#define IDLE_DURATION_SEC (10 * 3600)  // 10 hours
-#define IDLE_MAX_DROP_PERCENT 6        // Fail if battery drops more than this during idle
+#define IDLE_DURATION_SEC     (10 * 3600) // 10 hours
+#define IDLE_MAX_DROP_PERCENT 6           // Fail if battery drops more than this during idle
 
 // Discharge phase parameters — bring battery down to a safe shipping level.
 // Adjust here if the target ever changes.
@@ -54,8 +50,7 @@
 
 #ifdef CONFIG_SPEAKER
 static const int16_t sine_wave_4k[] = {
-  0, 32767, 0, -32768, 0, 32767, 0, -32768,
-  0, 32767, 0, -32768, 0, 32767, 0, -32768,
+  0, 32767, 0, -32768, 0, 32767, 0, -32768, 0, 32767, 0, -32768, 0, 32767, 0, -32768,
 };
 #endif
 
@@ -105,7 +100,7 @@ typedef struct {
   uint32_t phase_elapsed_sec;
   uint32_t cycle_count;
 
-  // Set once battery first reaches CHARGE_TARGET_PERCENT during charge+cycle phase
+  // Set once the PMIC reports charge complete during the charge+cycle phase
   bool charge_complete;
 
   // Battery state at start of idle phase, used for the 6% drop check
@@ -144,8 +139,7 @@ static void prv_cleanup_component(AppData *data) {
   }
 #endif
 #ifdef CONFIG_BACKLIGHT_HAS_COLOR
-  if (data->component >= ComponentBacklightWhite &&
-      data->component <= ComponentBacklightBlue) {
+  if (data->component >= ComponentBacklightWhite && data->component <= ComponentBacklightBlue) {
     backlight_set_color(data->saved_backlight_color);
     light_enable(false);
   }
@@ -169,8 +163,7 @@ static void prv_start_component(AppData *data) {
   }
 #endif
 #ifdef CONFIG_BACKLIGHT_HAS_COLOR
-  if (data->component >= ComponentBacklightWhite &&
-      data->component <= ComponentBacklightBlue) {
+  if (data->component >= ComponentBacklightWhite && data->component <= ComponentBacklightBlue) {
     light_enable(true);
   }
 #else
@@ -246,8 +239,7 @@ static void prv_run_component_display(AppData *data) {
       AccelDriverSample sample;
       accel_peek(&sample);
       comp_name = "Accel";
-      sniprintf(comp_detail, sizeof(comp_detail),
-                "X:%" PRIi16 " Y:%" PRIi16 " Z:%" PRIi16,
+      sniprintf(comp_detail, sizeof(comp_detail), "X:%" PRIi16 " Y:%" PRIi16 " Z:%" PRIi16,
                 sample.x, sample.y, sample.z);
       break;
     }
@@ -256,8 +248,7 @@ static void prv_run_component_display(AppData *data) {
       MagData mag_sample;
       mag_read_data(&mag_sample);
       comp_name = "Mag";
-      sniprintf(comp_detail, sizeof(comp_detail),
-                "X:%" PRIi16 " Y:%" PRIi16 " Z:%" PRIi16,
+      sniprintf(comp_detail, sizeof(comp_detail), "X:%" PRIi16 " Y:%" PRIi16 " Z:%" PRIi16,
                 mag_sample.x, mag_sample.y, mag_sample.z);
       break;
     }
@@ -303,8 +294,8 @@ static void prv_run_component_display(AppData *data) {
     case ComponentVibe: {
       // Only pulse once at the start of the vibe phase
       if (data->component_elapsed_sec <= 1) {
-        static const uint32_t vibe_durations[] = { 250 };
-        static const uint32_t vibe_amplitudes[] = { 50 };
+        static const uint32_t vibe_durations[] = {250};
+        static const uint32_t vibe_amplitudes[] = {50};
         VibePatternWithAmplitudes pat = {
           .durations = vibe_durations,
           .amplitudes = vibe_amplitudes,
@@ -333,30 +324,40 @@ static void prv_run_component_display(AppData *data) {
     chg_str = "Idle";
   } else {
     switch (charge_status) {
-      case BatteryChargeStatusComplete: chg_str = "Cmpl"; break;
-      case BatteryChargeStatusTrickle:  chg_str = "Trk";  break;
-      case BatteryChargeStatusCC:       chg_str = "CC";   break;
-      case BatteryChargeStatusCV:       chg_str = "CV";   break;
-      default:                          chg_str = "?";    break;
+      case BatteryChargeStatusComplete:
+        chg_str = "Cmpl";
+        break;
+      case BatteryChargeStatusTrickle:
+        chg_str = "Trk";
+        break;
+      case BatteryChargeStatusCC:
+        chg_str = "CC";
+        break;
+      case BatteryChargeStatusCV:
+        chg_str = "CV";
+        break;
+      default:
+        chg_str = "?";
+        break;
     }
   }
 
   sniprintf(data->status_string, sizeof(data->status_string),
             "CHG+CYC [%s]\n"
-            "Cycle: %" PRIu32 "\n"
+            "Cycle: %" PRIu32
+            "\n"
             "Elapsed: %s\n"
             "Remain: %s\n"
-            "%" PRId32 "mV %" PRIu8 "%% %s\n"
-            "%" PRId8 ".%02" PRIu8 "C\n"
+            "%" PRId32 "mV %" PRIu8
+            "%% %s\n"
+            "%" PRId8 ".%02" PRIu8
+            "C\n"
             "%s",
-            comp_name, data->cycle_count,
-            time_str, rem_str,
-            bc.v_mv, cs.charge_percent, chg_str,
-            temp_c, temp_c_frac,
-            comp_detail);
+            comp_name, data->cycle_count, time_str, rem_str, bc.v_mv, cs.charge_percent, chg_str,
+            temp_c, temp_c_frac, comp_detail);
 }
 
-static void prv_handle_second_tick(struct tm *tick_time, TimeUnits units_changed) {
+static void prv_handle_tick(struct tm *tick_time, TimeUnits units_changed) {
   AppData *data = app_state_get_user_data();
 
   switch (data->state) {
@@ -365,18 +366,14 @@ static void prv_handle_second_tick(struct tm *tick_time, TimeUnits units_changed
       if (cs.is_plugged) {
         data->state = AgingStateChargingAndCycling;
         data->phase_elapsed_sec = 0;
-        data->charge_complete = (cs.charge_percent >= CHARGE_TARGET_PERCENT);
-        if (data->charge_complete) {
-          // Battery was already full at plug-in: stop active charging now
-          // so the cell isn't held at 100% by continuous BMS top-off.
-          battery_set_charge_enable(false);
-        }
+        // Completion is derived from the PMIC charge state inside the
+        // charge+cycle phase, not pre-decided from the SoC at plug-in.
+        data->charge_complete = false;
         data->component = ComponentAccel;
         data->component_elapsed_sec = 0;
         data->cycle_count = 1;
         prv_start_component(data);
-        sniprintf(data->status_string, sizeof(data->status_string),
-                  "CHG+CYC\nStarting...");
+        sniprintf(data->status_string, sizeof(data->status_string), "CHG+CYC\nStarting...");
       } else {
         sniprintf(data->status_string, sizeof(data->status_string),
                   "PLUG CHARGER\n\nPlug the watch\nto start");
@@ -402,22 +399,25 @@ static void prv_handle_second_tick(struct tm *tick_time, TimeUnits units_changed
         break;
       }
 
-      // Charge progress / completion tracking
+      // Charge completion tracking. We're guaranteed plugged here (an unplug
+      // fails above). Treat the battery as full once the PMIC stops charging
+      // on its own at a near-full SoC. "Plugged but not charging" below the
+      // threshold is a transient (just-plugged / between cycles), so we keep
+      // waiting and may restart. A charger/cell fault never reaches this and
+      // trips the timeout instead.
       if (!data->charge_complete) {
-        if (cs.charge_percent >= CHARGE_TARGET_PERCENT) {
+        if (!cs.is_charging && cs.charge_percent >= CHARGE_COMPLETE_MIN_PERCENT) {
           data->charge_complete = true;
-          // Stop active charging now that we're full. The system keeps
-          // running off USB power, so the battery just holds at 100%
-          // for the rest of the cycling phase instead of being held
-          // there by continuous top-off, which is gentler on the cell.
+          // Now that the PMIC reports full, stop active charging so the cell
+          // isn't held near 100% by continuous top-off for the rest of the
+          // cycling phase, which is gentler on the cell. The battery may sag a
+          // little under cycling load with charging off; that's expected, and
+          // charge retention is validated separately by the idle phase.
           battery_set_charge_enable(false);
         } else if (data->phase_elapsed_sec >= CHARGE_TIMEOUT_SEC) {
           prv_enter_fail(data, "Charge timeout\n(90min)");
           break;
         }
-      } else if (cs.charge_percent < CHARGE_HOLD_MIN_PERCENT) {
-        prv_enter_fail(data, "Battery dropped\nafter charge");
-        break;
       }
 
       // Phase done?
@@ -450,7 +450,8 @@ static void prv_handle_second_tick(struct tm *tick_time, TimeUnits units_changed
         sniprintf(data->status_string, sizeof(data->status_string), "IDLE\nStarting...");
       } else {
         sniprintf(data->status_string, sizeof(data->status_string),
-                  "UNPLUG WATCH\n\nCharged to %" PRIu8 "%%\n"
+                  "UNPLUG WATCH\n\nCharged to %" PRIu8
+                  "%%\n"
                   "Unplug to begin\nidle test",
                   cs.charge_percent);
       }
@@ -478,9 +479,8 @@ static void prv_handle_second_tick(struct tm *tick_time, TimeUnits units_changed
       if (data->phase_elapsed_sec >= IDLE_DURATION_SEC) {
         if (drop > IDLE_MAX_DROP_PERCENT) {
           char reason[64];
-          sniprintf(reason, sizeof(reason),
-                    "Idle drop %" PRId8 "%%\n> %d%%",
-                    drop, IDLE_MAX_DROP_PERCENT);
+          sniprintf(reason, sizeof(reason), "Idle drop %" PRId8 "%%\n> %d%%", drop,
+                    IDLE_MAX_DROP_PERCENT);
           prv_enter_fail(data, reason);
           break;
         }
@@ -492,13 +492,15 @@ static void prv_handle_second_tick(struct tm *tick_time, TimeUnits units_changed
         backlight_set_color(0xFFFFFF);
 #endif
         light_enable(true);
+        // The screen only needs occasional refreshes while discharging, so
+        // tick once a minute to cut wake-ups and the test's own power draw.
+        tick_timer_service_subscribe(MINUTE_UNIT, prv_handle_tick);
         break;
       }
 
       char time_str[16], rem_str[16];
       prv_format_time(time_str, sizeof(time_str), data->phase_elapsed_sec);
-      prv_format_time(rem_str, sizeof(rem_str),
-                      IDLE_DURATION_SEC - data->phase_elapsed_sec);
+      prv_format_time(rem_str, sizeof(rem_str), IDLE_DURATION_SEC - data->phase_elapsed_sec);
 
       int8_t temp_c = (int8_t)(bc.t_mc / 1000);
       uint8_t temp_c_frac = ((bc.t_mc > 0 ? bc.t_mc : -bc.t_mc) % 1000) / 10;
@@ -507,18 +509,19 @@ static void prv_handle_second_tick(struct tm *tick_time, TimeUnits units_changed
                 "IDLE\n"
                 "Elapsed: %s\n"
                 "Remain: %s\n"
-                "%" PRId32 "mV %" PRIu8 "%%\n"
-                "%" PRId8 ".%02" PRIu8 "C\n"
+                "%" PRId32 "mV %" PRIu8
+                "%%\n"
+                "%" PRId8 ".%02" PRIu8
+                "C\n"
                 "Start:%" PRIu8 "%% Drop:%" PRId8 "/%d%%",
-                time_str, rem_str,
-                bc.v_mv, cs.charge_percent,
-                temp_c, temp_c_frac,
+                time_str, rem_str, bc.v_mv, cs.charge_percent, temp_c, temp_c_frac,
                 data->initial_percent, drop, IDLE_MAX_DROP_PERCENT);
       break;
     }
 
     case AgingStateDischarging: {
-      data->phase_elapsed_sec++;
+      // This phase ticks once a minute (see the Idle->Discharge transition).
+      data->phase_elapsed_sec += SECONDS_PER_MINUTE;
 
       BatteryConstants bc;
       battery_get_constants(&bc);
@@ -540,8 +543,7 @@ static void prv_handle_second_tick(struct tm *tick_time, TimeUnits units_changed
 #endif
         data->state = AgingStatePass;
         sniprintf(data->status_string, sizeof(data->status_string),
-                  "PASS\n\nDischarged to\n%" PRIu8 "%%",
-                  cs.charge_percent);
+                  "PASS\n\nDischarged to\n%" PRIu8 "%%", cs.charge_percent);
         prv_report_result(true);
         tick_timer_service_unsubscribe();
         break;
@@ -555,11 +557,12 @@ static void prv_handle_second_tick(struct tm *tick_time, TimeUnits units_changed
 
       sniprintf(data->status_string, sizeof(data->status_string),
                 "DISCHARGING\nTime: %s\n\n"
-                "%" PRId32 "mV %" PRIu8 "%%\n"
-                "%" PRId8 ".%02" PRIu8 "C\n\n"
+                "%" PRId32 "mV %" PRIu8
+                "%%\n"
+                "%" PRId8 ".%02" PRIu8
+                "C\n\n"
                 "Target: %d%%",
-                time_str, bc.v_mv, cs.charge_percent,
-                temp_c, temp_c_frac,
+                time_str, bc.v_mv, cs.charge_percent, temp_c, temp_c_frac,
                 DISCHARGE_TARGET_PERCENT);
       break;
     }
@@ -570,8 +573,7 @@ static void prv_handle_second_tick(struct tm *tick_time, TimeUnits units_changed
   }
 
   if (data->state == AgingStateFail) {
-    sniprintf(data->status_string, sizeof(data->status_string),
-              "FAIL\n\n%s", data->fail_reason);
+    sniprintf(data->status_string, sizeof(data->status_string), "FAIL\n\n%s", data->fail_reason);
   }
 
   text_layer_set_text(&data->status, data->status_string);
@@ -642,14 +644,14 @@ static void prv_handle_init(void) {
   TextLayer *status = &data->status;
   const int16_t status_y = PBL_IF_ROUND_ELSE(40, 25);
   const int16_t status_x = PBL_IF_ROUND_ELSE(15, 5);
-  text_layer_init(status, &GRect(status_x, status_y, bounds.size.w - (status_x * 2),
-                                 bounds.size.h - status_y));
+  text_layer_init(
+      status, &GRect(status_x, status_y, bounds.size.w - (status_x * 2), bounds.size.h - status_y));
   text_layer_set_font(status, fonts_get_system_font(FONT_KEY_GOTHIC_18));
-  text_layer_set_text_alignment(status, PBL_IF_ROUND_ELSE(GTextAlignmentCenter,
-                                                           GTextAlignmentLeft));
+  text_layer_set_text_alignment(status,
+                                PBL_IF_ROUND_ELSE(GTextAlignmentCenter, GTextAlignmentLeft));
   layer_add_child(window_layer, &status->layer);
 
-  tick_timer_service_subscribe(SECOND_UNIT, prv_handle_second_tick);
+  tick_timer_service_subscribe(SECOND_UNIT, prv_handle_tick);
 
   app_window_stack_push(window, true);
 }
@@ -664,8 +666,9 @@ const PebbleProcessMd *mfg_test_aging_app_get_info(void) {
   static const PebbleProcessMdSystem s_app_info = {
     .common.main_func = &s_main,
     // UUID: 12345678-ABCD-EF01-2345-6789ABCDEF01
-    .common.uuid = { 0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD, 0xEF, 0x01,
-                     0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0x01 },
+    .common.uuid =
+        {0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD, 0xEF, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
+         0x01},
     .name = "MfgTestAging",
   };
   return (const PebbleProcessMd *)&s_app_info;

@@ -9,21 +9,21 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "drivers/button_id.h"
+#include <pbl/drivers/button_id.h>
 
 #define IRQ_PRIORITY_INVALID (1 << __NVIC_PRIO_BITS)
 
 enum {
-  #define IRQ_DEF(num, irq) IS_VALID_IRQ__##irq,
-  #include "irq_qemu.def"
-  #undef IRQ_DEF
+#define IRQ_DEF(num, irq) IS_VALID_IRQ__##irq,
+#include "irq_qemu.def"
+#undef IRQ_DEF
 };
 
 //! Creates a trampoline to the interrupt handler defined within the driver
 #define IRQ_MAP(irq, handler, device) \
-  void irq##_IRQHandler(void) { \
-    handler(device); \
-  } \
+  void irq##_IRQHandler(void) {       \
+    handler(device);                  \
+  }                                   \
   _Static_assert(IS_VALID_IRQ__##irq || true, "(See comment below)")
 /*
  * The above static assert checks that the requested IRQ is valid by checking that the enum
@@ -35,7 +35,7 @@ enum {
 typedef void GPIO_TypeDef;
 
 #define GPIO_Port_NULL NULL
-#define GPIO_Pin_NULL 0U
+#define GPIO_Pin_NULL  0U
 
 typedef enum {
   GPIO_OType_PP,
@@ -87,9 +87,11 @@ typedef struct {
   uint8_t backlight_on_percent;
   uint32_t ambient_light_dark_threshold;
   uint32_t ambient_k_delta_threshold;
-#ifdef CONFIG_DYNAMIC_BACKLIGHT
-  uint32_t dynamic_backlight_min_threshold;
-#endif
+  // Raw-count -> lux conversion: lux = (level - offset) * num / den.
+  // den == 0 means no conversion available for this board.
+  uint32_t ambient_light_lux_dark_offset;
+  uint32_t ambient_light_lux_num;
+  uint32_t ambient_light_lux_den;
 #ifdef CONFIG_BACKLIGHT_HAS_COLOR
   // Default RGB backlight color (packed 0x00RRGGBB), applied when no app
   // override is set. User-preference overrides this via backlight_set_color().
@@ -131,19 +133,21 @@ typedef struct {
 } BoardConfigMag;
 
 // QEMU MMIO peripheral base addresses
-#define QEMU_UART0_BASE     0x40000000
-#define QEMU_UART1_BASE     0x40001000
-#define QEMU_UART2_BASE     0x40002000
-#define QEMU_TIMER0_BASE    0x40003000
-#define QEMU_TIMER1_BASE    0x40004000
-#define QEMU_RTC_BASE       0x40005000
-#define QEMU_GPIO_BASE      0x40006000
-#define QEMU_SYSCTRL_BASE   0x40007000
-#define QEMU_DISPLAY_BASE   0x40008000
+#define QEMU_UART0_BASE      0x40000000
+#define QEMU_UART1_BASE      0x40001000
+#define QEMU_UART2_BASE      0x40002000
+#define QEMU_TIMER0_BASE     0x40003000
+#define QEMU_TIMER1_BASE     0x40004000
+#define QEMU_RTC_BASE        0x40005000
+#define QEMU_GPIO_BASE       0x40006000
+#define QEMU_SYSCTRL_BASE    0x40007000
+#define QEMU_DISPLAY_BASE    0x40008000
 #define QEMU_DISPLAY_FB_BASE 0x50000000
-#define QEMU_EXTFLASH_BASE  0x40010000
-#define QEMU_TOUCH_BASE     0x40011000
-#define QEMU_AUDIO_BASE     0x40012000
+#define QEMU_EXTFLASH_BASE   0x40010000
+#define QEMU_TOUCH_BASE      0x40011000
+#define QEMU_AUDIO_BASE      0x40012000
+#define QEMU_WDOG_BASE       0x40013000
+#define QEMU_UART3_BASE      0x40014000
 
 #define QEMU_EXTFLASH_XIP_BASE 0x10000000
 

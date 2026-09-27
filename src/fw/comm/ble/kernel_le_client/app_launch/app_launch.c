@@ -4,9 +4,8 @@
 #include "app_launch.h"
 
 #include "comm/ble/gatt_client_operations.h"
-#include "pbl/services/analytics/analytics.h"
 #include "pbl/services/comm_session/session.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 //! See https://pebbletechnology.atlassian.net/wiki/display/DEV/Pebble+GATT+Services
@@ -14,14 +13,14 @@
 // -------------------------------------------------------------------------------------------------
 // Static variables
 
-static BLECharacteristic s_app_launch_characteristic = BLE_CHARACTERISTIC_INVALID;
+static pbl_bt_characteristic_t s_app_launch_characteristic = PBL_BT_CHARACTERISTIC_INVALID;
 
 // -------------------------------------------------------------------------------------------------
 
-void app_launch_handle_service_discovered(BLECharacteristic *characteristics) {
+void app_launch_handle_service_discovered(pbl_bt_characteristic_t *characteristics) {
   PBL_ASSERTN(characteristics);
 
-  if (s_app_launch_characteristic != BLE_CHARACTERISTIC_INVALID) {
+  if (s_app_launch_characteristic != PBL_BT_CHARACTERISTIC_INVALID) {
     PBL_LOG_WRN("Multiple app launch services!? Will use most recent one.");
   }
 
@@ -34,45 +33,34 @@ void app_launch_handle_service_discovered(BLECharacteristic *characteristics) {
 }
 
 void app_launch_invalidate_all_references(void) {
-  s_app_launch_characteristic = BLE_CHARACTERISTIC_INVALID;
+  s_app_launch_characteristic = PBL_BT_CHARACTERISTIC_INVALID;
 }
 
-void app_launch_handle_service_removed(
-    BLECharacteristic *characteristics, uint8_t num_characteristics) {
+void app_launch_handle_service_removed(pbl_bt_characteristic_t *characteristics,
+                                       uint8_t num_characteristics) {
   app_launch_invalidate_all_references();
 }
 
 // -------------------------------------------------------------------------------------------------
 
-bool app_launch_can_handle_characteristic(BLECharacteristic characteristic) {
+bool app_launch_can_handle_characteristic(pbl_bt_characteristic_t characteristic) {
   return (characteristic == s_app_launch_characteristic);
 }
 
 // -------------------------------------------------------------------------------------------------
 
-void app_launch_handle_read_or_notification(BLECharacteristic characteristic, const uint8_t *value,
-                                            size_t value_length, BLEGATTError error) {
-  // If error is BLEGATTErrorSuccess, it means the Pebble app responded.
-  PBL_LOG_INFO("App relaunch result: %u", error);
-  if (error == BLEGATTErrorSuccess) {
-  } else {
-  }
-}
-
-// -------------------------------------------------------------------------------------------------
-
 void app_launch_handle_disconnection(void) {
-  s_app_launch_characteristic = BLE_CHARACTERISTIC_INVALID;
+  s_app_launch_characteristic = PBL_BT_CHARACTERISTIC_INVALID;
 }
 
 // -------------------------------------------------------------------------------------------------
 
 void app_launch_trigger(void) {
-  if (s_app_launch_characteristic == BLE_CHARACTERISTIC_INVALID) {
+  if (s_app_launch_characteristic == PBL_BT_CHARACTERISTIC_INVALID) {
     return;
   }
-  BTErrno err = gatt_client_op_read(s_app_launch_characteristic, GAPLEClientKernel);
-  if (err != BTErrnoOK) {
+  enum pbl_bt_errno err = gatt_client_op_read(s_app_launch_characteristic, GAPLEClientKernel);
+  if (err != PBL_BT_ERRNO_OK) {
     PBL_LOG_ERR("App relaunch failed: %u", err);
   }
 }

@@ -2,7 +2,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include <stdio.h>
-#include <setjmp.h>
 
 #include "debug/power_tracking.h"
 
@@ -12,43 +11,38 @@
 #include "console/dbgserial_input.h"
 #include "console/pulse.h"
 
-#include "drivers/clocksource.h"
-#include "drivers/rtc.h"
-#include "drivers/flash.h"
-#include "drivers/debounced_button.h"
+#include <pbl/drivers/rtc.h>
+#include <pbl/drivers/flash.h>
+#include <pbl/drivers/debounced_button.h>
 
-#include "drivers/accel.h"
-#include "drivers/ambient_light.h"
-#include "drivers/backlight.h"
-#include "drivers/battery.h"
-#include "drivers/display/display.h"
-#include "drivers/gpio.h"
-#include "drivers/hrm.h"
-#include "drivers/mag.h"
-#include "drivers/mic.h"
-#include "drivers/otp.h"
-#include "drivers/pmic.h"
-#include "drivers/pressure.h"
-#include "drivers/task_watchdog.h"
-#include "drivers/temperature.h"
-#include "drivers/touch/touch_sensor.h"
-#include "drivers/vibe.h"
-#include "drivers/voltage_monitor.h"
-#include "drivers/watchdog.h"
-#include "drivers/sf32lb52/rc10k.h"
+#include <pbl/drivers/accel.h>
+#include <pbl/drivers/ambient_light.h>
+#include <pbl/drivers/backlight.h>
+#include <pbl/drivers/battery.h>
+#include <pbl/drivers/display/display.h>
+#include <pbl/drivers/hrm.h>
+#include <pbl/drivers/mag.h>
+#include <pbl/drivers/mic.h>
+#include <pbl/drivers/otp.h>
+#include <pbl/drivers/pmic.h>
+#include <pbl/drivers/pressure.h>
+#include <pbl/task_wdt/task_wdt.h>
+#include <pbl/drivers/temperature.h>
+#include <pbl/drivers/touch/touch_sensor.h>
+#include <pbl/drivers/vibe.h>
+#include <pbl/drivers/voltage_monitor.h>
+#include <pbl/drivers/watchdog.h>
+#include <pbl/drivers/sf32lb52/rc10k.h>
 
 #include "resource/resource.h"
 #include "resource/system_resource.h"
 
-#include "kernel/coredump_extra_regions.h"
 #include "kernel/util/task_init.h"
-#include "kernel/util/sleep.h"
 #include "kernel/events.h"
 #include "kernel/kernel_heap.h"
 #include "kernel/fault_handling.h"
 #include "kernel/memory_layout.h"
-#include "kernel/panic.h"
-#include "kernel/pulse_logging.h"
+#include "logging/pulse_logging.h"
 #include "pbl/services/services.h"
 #include "pbl/services/boot_splash.h"
 #include "pbl/services/clock.h"
@@ -64,40 +58,29 @@
 #include "kernel/util/delay.h"
 #include "util/mbuf.h"
 #include "system/firmware_storage.h"
+#include "system/passert.h"
 #include "system/version.h"
 
 #include "kernel/event_loop.h"
 
-#include "applib/fonts/fonts.h"
-#include "applib/graphics/graphics.h"
-#include "applib/graphics/text.h"
-#include "applib/ui/ui.h"
-#include "applib/ui/window_stack_private.h"
-
 #include "console/serial_console.h"
 #include "system/bootbits.h"
-#include "system/logging.h"
-#include "system/passert.h"
-#include "system/reset.h"
-
-#include "syscall/syscall_internal.h"
+#include <pbl/logging/logging.h>
 
 #include "debug/debug.h"
 
-#include "FreeRTOS.h"
-#include "task.h"
+#include "pbl/kernel/sched.h"
+#include "pbl/kernel/thread.h"
 
 #include "mfg/mfg_info.h"
 #include "mfg/mfg_serials.h"
 
-#include <bluetooth/init.h>
-
-#include <string.h>
+#include <pbl/bluetooth/init.h>
+#ifdef CONFIG_QEMU
+#include <pbl/drivers/qemu/qemu_serial.h>
+#endif
 
 void soc_early_init(void);
-
-/* here is as good as anywhere else ... */
-const int __attribute__((used)) uxTopUsedPriority = configMAX_PRIORITIES - 1;
 
 static TimerID s_lowpower_timer = TIMER_INVALID_ID;
 #ifndef CONFIG_MFG
@@ -105,9 +88,7 @@ static TimerID s_uptime_timer = TIMER_INVALID_ID;
 #endif
 static void main_task(void *parameter);
 
-static void print_splash_screen(void)
-{
-
+static void print_splash_screen(void) {
 #if defined(CONFIG_MFG)
   PBL_LOG_ALWAYS("PebbleOS - MANUFACTURING MODE");
 #elif defined(CONFIG_RECOVERY_FW)
@@ -115,19 +96,18 @@ static void print_splash_screen(void)
 #else
   PBL_LOG_ALWAYS("PebbleOS");
 #endif
-  PBL_LOG_ALWAYS("%s%s",
-          TINTIN_METADATA.version_tag,
-          (TINTIN_METADATA.is_dual_slot && !TINTIN_METADATA.is_recovery_firmware) ?
-            (TINTIN_METADATA.is_slot_0 ? " (slot0)" : " (slot1)") :
-            "");
-  PBL_LOG_ALWAYS("(c) 2013-2025 The PebbleOS contributors");
+  PBL_LOG_ALWAYS("%s%s", TINTIN_METADATA.version_tag,
+                 (TINTIN_METADATA.is_dual_slot && !TINTIN_METADATA.is_recovery_firmware)
+                     ? (TINTIN_METADATA.is_slot_0 ? " (slot0)" : " (slot1)")
+                     : "");
+  PBL_LOG_ALWAYS("(c) 2013-2026 The PebbleOS contributors");
   PBL_LOG_ALWAYS(" ");
 }
 
 int main(void) {
   soc_early_init();
 
-  extern void * __ISR_VECTOR_TABLE__;  // Defined in linker script
+  extern void *__ISR_VECTOR_TABLE__; // Defined in linker script
   SCB->VTOR = (uint32_t)&__ISR_VECTOR_TABLE__;
 
   NVIC_SetPriorityGrouping(3); // 4 bits for group priority; 0 bits for subpriority
@@ -151,30 +131,37 @@ int main(void) {
   extern uint32_t __kernel_main_stack_start__[];
   extern uint32_t __kernel_main_stack_size__[];
   extern uint32_t __stack_guard_size__[];
-  const uint32_t kernel_main_stack_words = ( (uint32_t)__kernel_main_stack_size__
-                            - (uint32_t) __stack_guard_size__ ) / sizeof(portSTACK_TYPE);
-
-  TaskParameters_t task_params = {
-    .pvTaskCode = main_task,
-    .pcName = "KernelMain",
-    .usStackDepth = kernel_main_stack_words,
-    .uxPriority = (tskIDLE_PRIORITY + 3) | portPRIVILEGE_BIT,
-    .puxStackBuffer = (void*)(uintptr_t)((uint32_t)__kernel_main_stack_start__
-                                          + (uint32_t)__stack_guard_size__)
+  struct pbl_thread_attr attr = {
+    .name = "KernelMain",
+    .entry = main_task,
+    .prio = PBL_PRIO_IDLE + 3,
+    .privileged = true,
+    .stack = (void *)((uintptr_t)__kernel_main_stack_start__ + (uintptr_t)__stack_guard_size__),
+    .stack_size = (uintptr_t)__kernel_main_stack_size__ - (uintptr_t)__stack_guard_size__,
   };
 
-  pebble_task_create(PebbleTask_KernelMain, &task_params, NULL);
+  pebble_task_create(PebbleTask_KernelMain, &attr);
 
-  vTaskStartScheduler();
-  for(;;);
+  pbl_kernel_start();
 }
 
-static void watchdog_timer_callback(void* data) {
-  task_watchdog_bit_set(PebbleTask_NewTimers);
+static int s_new_timers_wdt_channel = -1;
+
+static void *prv_new_timers_wdt_expired(int channel_id, void *user_data) {
+  return new_timer_debug_get_current_callback();
+}
+
+static void watchdog_timer_callback(void *data) {
+  pbl_task_wdt_feed(s_new_timers_wdt_channel);
 }
 
 static void register_system_timers(void) {
-  static RegularTimerInfo watchdog_timer = { .list_node = { 0, 0 }, .cb = watchdog_timer_callback };
+  s_new_timers_wdt_channel =
+      pbl_task_wdt_add(pebble_task_get_thread(PebbleTask_NewTimers), CONFIG_TASK_WDT_TIMEOUT_MS,
+                       prv_new_timers_wdt_expired, NULL);
+  PBL_ASSERTN(s_new_timers_wdt_channel >= 0);
+
+  static RegularTimerInfo watchdog_timer = {.list_node = {0, 0}, .cb = watchdog_timer_callback};
   regular_timer_add_seconds_callback(&watchdog_timer);
 }
 
@@ -242,18 +229,18 @@ static void clear_reset_loop_detection_bits(void) {
 }
 
 #ifndef CONFIG_MFG
-static void uptime_callback(void* data) {
+static void uptime_callback(void *data) {
   PBL_LOG_VERBOSE("Uptime reached 15 minutes, set stable bit.");
   new_timer_delete(s_uptime_timer);
   boot_bit_set(BOOT_BIT_FW_STABLE);
 }
 #endif
 
-static void prv_low_power_debug_config_callback(void* data) {
+static void prv_low_power_debug_config_callback(void *data) {
   new_timer_delete(s_lowpower_timer);
 }
 
-static NOINLINE void prv_main_task_init(void) {
+static PBL_NOINLINE void prv_main_task_init(void) {
   // The Snowy bootloader does not clear the watchdog flag itself. Clear the
   // flag ourselves so that a future safe reset does not look like a watchdog
   // reset to the bootloader.
@@ -284,16 +271,9 @@ static NOINLINE void prv_main_task_init(void) {
   new_timer_service_init();
   regular_timer_init();
 
-  // Initialize the task watchdog and immediately pause it for 30 seconds to
-  // give us time to initialize everything without worrying about task watchdog
-  // from firing if we block other tasks.
-  task_watchdog_init();
-  task_watchdog_pause(30);
-
-  // Wire up the coredump extra-regions registry before pbl_analytics_init,
-  // which triggers Memfault coredump reconstruction. Reconstruction reads the
-  // registry to decide what beyond-the-defaults RAM to forward to the cloud.
-  coredump_extra_regions_init();
+  // Suspend the task watchdog while the rest of the system comes up.
+  pbl_task_wdt_init();
+  pbl_task_wdt_suspend(30 * 1000);
 
   pbl_analytics_init();
   register_system_timers();
@@ -349,7 +329,10 @@ static NOINLINE void prv_main_task_init(void) {
   compositor_init();
   kernel_ui_init();
 
-  bt_driver_init();
+#ifdef CONFIG_QEMU
+  qemu_serial_init();
+#endif
+  pbl_bt_init();
 
   services_init();
 
@@ -362,14 +345,14 @@ static NOINLINE void prv_main_task_init(void) {
 
   clear_reset_loop_detection_bits();
 
-  task_watchdog_mask_set(PebbleTask_KernelMain);
+  PBL_ASSERTN(pbl_task_wdt_add(NULL, CONFIG_TASK_WDT_TIMEOUT_MS, NULL, NULL) >= 0);
 
   // Leave the board with stop and sleep mode debugging enabled for at least 10
   // seconds to give OpenOCD time to start and still able to connect when it is
   // ready to flash in the new image via JTAG
   s_lowpower_timer = new_timer_create();
-  new_timer_start(s_lowpower_timer,
-                  10 * 1000, prv_low_power_debug_config_callback, NULL, 0 /*flags*/);
+  new_timer_start(s_lowpower_timer, 10 * 1000, prv_low_power_debug_config_callback, NULL,
+                  0 /*flags*/);
 
 #ifndef CONFIG_MFG
   s_uptime_timer = new_timer_create();
@@ -382,7 +365,7 @@ static NOINLINE void prv_main_task_init(void) {
   // entering the kernel event queue.
   debounced_button_init();
 
-  task_watchdog_resume();
+  pbl_task_wdt_resume();
 }
 
 static void main_task(void *parameter) {

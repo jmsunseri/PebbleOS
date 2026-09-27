@@ -25,15 +25,14 @@ size_t comm_session_send_buffer_get_max_payload_length(const CommSession *sessio
 //! the function returns with `true`, the amount of space (or more) is guaranteed to be available.
 //! @param timeout_ms The maximum duration to wait for the send buffer to become available with the
 //! required number of bytes of free space.
-//! @return True if the "writer access" was sucessfully acquired, false otherwise.
-SendBuffer * comm_session_send_buffer_begin_write(CommSession *session, uint16_t endpoint_id,
-                                                  size_t required_free_length,
-                                                  uint32_t timeout_ms);
+//! @return True if the "writer access" was successfully acquired, false otherwise.
+SendBuffer *comm_session_send_buffer_begin_write(CommSession *session, uint16_t endpoint_id,
+                                                 size_t required_free_length, uint32_t timeout_ms);
 
 //! Copies data into the send buffer of the session.
 //! @note The caller must have called comm_session_send_buffer_begin_write() first.
 //! @note bt_lock() may be held when making the call.
-//! @param session The session for which to enqueue data
+//! @param send_buffer The send buffer of the session for which to enqueue data
 //! @param data Pointer to the data to enqueue
 //! @param length Length of the data to enqueue
 //! @return true if the data was successfully queued up for sending, or false if there was not
@@ -47,5 +46,5 @@ bool comm_session_send_buffer_write(SendBuffer *send_buffer, const uint8_t *data
 //! to the session that was passed in the ..._begin_write() call.
 //! @note The caller must have called comm_session_send_buffer_begin_write() first.
 //! @note bt_lock() may be held when making the call.
-//! @param session The session for which to release the send buffer.
+//! @param send_buffer The send buffer to release.
 void comm_session_send_buffer_end_write(SendBuffer *send_buffer);

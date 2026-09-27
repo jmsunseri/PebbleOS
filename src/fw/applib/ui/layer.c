@@ -9,17 +9,20 @@
 #include "applib/graphics/graphics.h"
 #include "applib/ui/recognizer/recognizer.h"
 #include "applib/ui/recognizer/recognizer_list.h"
+#include "applib/ui/recognizer/recognizer_manager.h"
 #include "applib/ui/window_private.h"
 #include "applib/unobstructed_area_service_private.h"
 #include "kernel/kernel_applib_state.h"
 #include "kernel/pebble_tasks.h"
 #include "process_management/process_manager.h"
 #include "process_state/app_state/app_state.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 
 #include <string.h>
+#include "pbl/util/testing.h"
+#include "pbl/kernel/compiler.h"
 
 void layer_init(Layer *layer, const GRect *frame) {
   *layer = (Layer){};
@@ -28,21 +31,21 @@ void layer_init(Layer *layer, const GRect *frame) {
   layer->clips = true;
 }
 
-Layer* layer_create(GRect frame) {
-  Layer* layer = applib_type_malloc(Layer);
+Layer *layer_create(GRect frame) {
+  Layer *layer = applib_type_malloc(Layer);
   if (layer) {
     layer_init(layer, &frame);
   }
   return layer;
 }
 
-Layer* layer_create_with_data(GRect frame, size_t data_size) {
-  Layer* layer = applib_malloc(applib_type_size(Layer) + data_size);
+Layer *layer_create_with_data(GRect frame, size_t data_size) {
+  Layer *layer = applib_malloc(applib_type_size(Layer) + data_size);
   if (layer) {
     layer_init(layer, &frame);
     layer->has_data = true;
 
-    DataLayer *data_layer = (DataLayer*) layer;
+    DataLayer *data_layer = (DataLayer *)layer;
     memset(data_layer->data, 0, data_size);
   }
   return layer;
@@ -55,12 +58,36 @@ static bool prv_destroy_recognizer(Recognizer *recognizer, void *context) {
   recognizer_destroy(recognizer);
   return true;
 }
+
+//! The recognizer manager latches the touched layer for the whole gesture and walks its parent
+//! chain on every touch event. A layer destroyed mid-gesture (an app rebuilding UI from a timer
+//! or message callback with a finger down) would leave that latch dangling, so if the dying layer
+//! is the active layer or one of its ancestors, cancel the gesture and reset the manager.
+static void prv_invalidate_manager_active_layer(Layer *layer) {
+  if (!layer->window) {
+    return;
+  }
+  RecognizerManager *manager = window_get_recognizer_manager(layer->window);
+  if (!manager) {
+    return;
+  }
+  for (Layer *active = manager->active_layer; active; active = active->parent) {
+    if (active == layer) {
+      recognizer_manager_cancel_and_reset(manager);
+      return;
+    }
+  }
+}
 #endif
 
 void layer_deinit(Layer *layer) {
   if (!layer) {
     return;
   }
+#ifdef CONFIG_TOUCH
+  // Must run while layer->window is still set (layer_remove_from_parent clears it).
+  prv_invalidate_manager_active_layer(layer);
+#endif
   layer_remove_from_parent(layer);
 
 #ifdef CONFIG_TOUCH
@@ -69,7 +96,7 @@ void layer_deinit(Layer *layer) {
 #endif
 }
 
-void layer_destroy(Layer* layer) {
+void layer_destroy(Layer *layer) {
   if (layer == NULL) {
     return;
   }
@@ -115,14 +142,14 @@ void layer_process_tree(Layer *node, void *ctx, LayerIteratorFunc iterator_func)
   layer_process_tree_level(node, ctx, iterator_func);
 }
 
-inline static Layer __attribute__((always_inline)) *prv_layer_tree_traverse_next(Layer *stack[],
-    int const stack_size, uint8_t *current_depth,
-    const bool descend) {
+static PBL_ALWAYS_INLINE Layer *prv_layer_tree_traverse_next(Layer *stack[], int const stack_size,
+                                                             uint8_t *current_depth,
+                                                             const bool descend) {
   const Layer *top_of_stack = stack[*current_depth];
 
   // goto first child
   if (descend && top_of_stack->first_child) {
-    if (*current_depth < stack_size-1) {
+    if (*current_depth < stack_size - 1) {
       return stack[++(*current_depth)] = top_of_stack->first_child;
     } else {
       PBL_LOG_WRN("layer stack exceeded (%d). Will skip rendering.", stack_size);
@@ -140,7 +167,7 @@ inline static Layer __attribute__((always_inline)) *prv_layer_tree_traverse_next
     (*current_depth)--;
     const Layer *sibling = stack[*current_depth]->next_sibling;
     if (sibling) {
-      return stack[*current_depth] = (Layer*)sibling;
+      return stack[*current_depth] = (Layer *)sibling;
     }
   }
 
@@ -148,8 +175,8 @@ inline static Layer __attribute__((always_inline)) *prv_layer_tree_traverse_next
   return NULL;
 }
 
-Layer *__layer_tree_traverse_next__test_accessor(Layer *stack[],
-    int const max_depth, uint8_t *current_depth, const bool descend) {
+Layer *__layer_tree_traverse_next__test_accessor(Layer *stack[], int const max_depth,
+                                                 uint8_t *current_depth, const bool descend) {
   return prv_layer_tree_traverse_next(stack, max_depth, current_depth, descend);
 }
 
@@ -182,12 +209,13 @@ void layer_render_tree(Layer *node, GContext *ctx) {
       const Layer *levels_layer = stack[level];
       if (levels_layer->clips) {
         const GRect levels_layer_frame_in_ctx_space = {
-            .origin = {
+          .origin =
+              {
                 // drawing_box is expected to be setup as the bounds of the parent:
                 .x = ctx->draw_state.drawing_box.origin.x + levels_layer->frame.origin.x,
                 .y = ctx->draw_state.drawing_box.origin.y + levels_layer->frame.origin.y,
-            },
-            .size = levels_layer->frame.size,
+              },
+          .size = levels_layer->frame.size,
         };
         grect_clip(&ctx->draw_state.clip_box, &levels_layer_frame_in_ctx_space);
       }
@@ -210,13 +238,13 @@ void layer_render_tree(Layer *node, GContext *ctx) {
       if (ctx->lock) {
         graphics_release_frame_buffer(ctx, &ctx->dest_bitmap);
         APP_LOG(APP_LOG_LEVEL_WARNING,
-            "Frame buffer was not released. "
-            "Make sure to call graphics_release_frame_buffer before leaving update_proc.");
+                "Frame buffer was not released. "
+                "Make sure to call graphics_release_frame_buffer before leaving update_proc.");
       }
       descend = true;
     }
 
-node_hidden_do_not_descend:
+  node_hidden_do_not_descend:
     node = prv_layer_tree_traverse_next(stack, LAYER_TREE_STACK_SIZE, &current_depth, descend);
 
     ctx->draw_state = root_draw_state;
@@ -250,8 +278,7 @@ void layer_set_frame(Layer *layer, const GRect *frame) {
     // This is not a necessity, but supposedly a handy thing.
     const int16_t visible_width = layer->bounds.size.w + layer->bounds.origin.x;
     const int16_t visible_height = layer->bounds.size.h + layer->bounds.origin.y;
-    if (frame->size.w > visible_width ||
-        frame->size.h > visible_height) {
+    if (frame->size.w > visible_width || frame->size.h > visible_height) {
       layer->bounds.size.w += MAX(frame->size.w - visible_width, 0);
       layer->bounds.size.h += MAX(frame->size.h - visible_height, 0);
     }
@@ -315,9 +342,21 @@ GRect layer_get_unobstructed_bounds_by_value(const Layer *layer) {
   return bounds;
 }
 
+#ifdef CONFIG_TOUCH
+static bool prv_register_recognizer_cb(Recognizer *recognizer, void *context) {
+  recognizer_manager_register_recognizer(context, recognizer);
+  return true;
+}
+#endif
+
 //! Sets the window on the layer and on all of its children
 static void layer_set_window(Layer *layer, Window *window) {
   layer->window = window;
+#ifdef CONFIG_TOUCH
+  // Register recognizers that were attached while the layer had no window (NULL manager is a no-op)
+  recognizer_list_iterate(&layer->recognizer_list, prv_register_recognizer_cb,
+                          window_get_recognizer_manager(window));
+#endif
   Layer *child = layer->first_child;
   while (child) {
     layer_set_window(child, window);
@@ -336,6 +375,13 @@ void layer_remove_from_parent(Layer *child) {
   if (!child || child->parent == NULL) {
     return;
   }
+#ifdef CONFIG_TOUCH
+  // Must run while child->window is still set (cleared below). A subtree that leaves the
+  // tree mid-gesture must drop the recognizer manager's active-layer latch: the layers may
+  // be freed right after removal without a layer_deinit (e.g. the swap-layer layout path),
+  // leaving the latch dangling.
+  prv_invalidate_manager_active_layer(child);
+#endif
   if (child->parent->window) {
     window_schedule_render(child->parent->window);
   }
@@ -469,7 +515,7 @@ bool layer_get_clips(const Layer *layer) {
   return layer->clips;
 }
 
-void* layer_get_data(const Layer *layer) {
+void *layer_get_data(const Layer *layer) {
   if (!layer->has_data) {
     PBL_LOG_ERR("Layer was not allocated with a data region.");
     return NULL;
@@ -505,7 +551,7 @@ GRect layer_convert_rect_to_screen(const Layer *layer, GRect rect) {
 }
 
 void layer_get_global_frame(const Layer *layer, GRect *global_frame_out) {
-  *global_frame_out = (GRect) {
+  *global_frame_out = (GRect){
     .origin = layer_convert_point_to_screen(layer, GPointZero),
     .size = layer->frame.size,
   };
@@ -563,7 +609,7 @@ static bool prv_find_layer_containing_point(const Layer *node, LayerTouchIterato
   return true;
 }
 
-MOCKABLE Layer *layer_find_layer_containing_point(const Layer *node, const GPoint *point) {
+PBL_T_MOCKABLE Layer *layer_find_layer_containing_point(const Layer *node, const GPoint *point) {
   if (!node || !point) {
     return NULL;
   }

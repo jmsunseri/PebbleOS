@@ -1,16 +1,15 @@
 /* SPDX-FileCopyrightText: 2026 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/mic.h"
-#include "drivers/mic/qemu/mic_definitions.h"
+#include <pbl/drivers/mic.h>
+#include <pbl/drivers/mic/qemu/mic_definitions.h>
 
 #include "board/board.h"
 #include "console/prompt.h"
 #include "pbl/services/new_timer/new_timer.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
-#include <inttypes.h>
 #include <string.h>
 
 PBL_LOG_MODULE_DEFINE(driver_mic_qemu, CONFIG_DRIVER_MIC_LOG_LEVEL);
@@ -47,8 +46,8 @@ void mic_set_volume(MicDevice *this, uint16_t volume) {
   // No gain stage to tweak on the QEMU stub.
 }
 
-bool mic_start(MicDevice *this, MicDataHandlerCB data_handler, void *context,
-               int16_t *audio_buffer, size_t audio_buffer_len) {
+bool mic_start(MicDevice *this, MicDataHandlerCB data_handler, void *context, int16_t *audio_buffer,
+               size_t audio_buffer_len) {
   PBL_ASSERTN(this);
   PBL_ASSERTN(this->state);
   PBL_ASSERTN(data_handler);
@@ -82,7 +81,6 @@ bool mic_start(MicDevice *this, MicDataHandlerCB data_handler, void *context,
     return false;
   }
 
-  PBL_LOG_INFO("QEMU mic stub started (period=%" PRIu32 "ms)", period_ms);
   return true;
 }
 
@@ -115,7 +113,7 @@ uint32_t mic_get_channels(MicDevice *this) {
 }
 
 void command_mic_start(char *timeout_str, char *sample_size_str, char *sample_rate_str,
-                      char *format_str) {
+                       char *format_str) {
   prompt_send_response("Microphone console commands not supported on QEMU");
 }
 

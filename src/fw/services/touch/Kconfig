@@ -3,7 +3,8 @@
 
 config SERVICE_TOUCH
     bool "Touch"
-    default y if TOUCH
+    depends on TOUCH
+    default y
     help
       Touch event service. Requires a touch driver (CONFIG_TOUCH).
 
@@ -11,6 +12,6 @@ if SERVICE_TOUCH
 
 module = SERVICE_TOUCH
 module-str = Touch
-source "src/fw/Kconfig.template.log_level"
+source "subsys/logging/Kconfig.template.log_level"
 
 endif

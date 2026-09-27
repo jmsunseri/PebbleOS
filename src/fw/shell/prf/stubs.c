@@ -7,22 +7,21 @@
 //! to exist because systems that were common to both PRF and normal firmware wouldn't try to
 //! use something that only exists in normal, but we're not quite there yet.
 
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 #include "board/board.h"
-#include "drivers/backlight.h"
 #include "kernel/events.h"
 #include "popups/crashed_ui.h"
 #include "popups/notifications/notification_window.h"
 #include "process_management/app_install_manager.h"
 #include "process_management/pebble_process_md.h"
 #include "resource/resource_ids.auto.h"
-#include "resource/resource_storage.h"
 #include "resource/resource_storage_file.h"
 #include "pbl/services/light.h"
 #include "pbl/services/notifications/do_not_disturb.h"
 #include "pbl/services/notifications/alerts_private.h"
 #include "pbl/services/persist.h"
 #include "shell/prefs.h"
+#include "shell/system_theme.h"
 
 void app_fetch_binaries(const Uuid *uuid, AppInstallId app_id, bool has_worker) {
 }
@@ -52,14 +51,20 @@ void watchface_handle_button_event(PebbleEvent *e) {
 void app_idle_timeout_refresh(void) {
 }
 
-PebblePhoneCaller* phone_call_util_create_caller(const char *number, const char *name) {
+void app_idle_timeout_touch_down(void) {
+}
+
+void app_idle_timeout_touch_up(void) {
+}
+
+PebblePhoneCaller *phone_call_util_create_caller(const char *number, const char *name) {
   return NULL;
 }
 
 void alarm_set_snooze_delay(int delay_ms) {
 }
 
-const void* const g_pbl_system_tbl[] = {};
+const void *const g_pbl_system_tbl[] = {};
 
 const FileResourceData g_file_resource_stores[] = {};
 const uint32_t g_num_file_resource_stores = 0;
@@ -70,7 +75,7 @@ void persist_service_client_open(const Uuid *uuid) {
 void persist_service_client_close(const Uuid *uuid) {
 }
 
-SettingsFile * persist_service_lock_and_get_store(const Uuid *uuid) {
+SettingsFile *persist_service_lock_and_get_store(const Uuid *uuid) {
   return NULL;
 }
 
@@ -84,8 +89,6 @@ void wakeup_enable(bool enable) {
 bool phone_call_is_using_ANCS(void) {
   return true;
 }
-
-#include "pbl/services/notifications/alerts.h"
 
 #include "pbl/services/blob_db/app_db.h"
 #include "pbl/services/app_cache.h"
@@ -130,7 +133,7 @@ bool app_db_exists_install_id(AppInstallId app_id) {
   return false;
 }
 
-void timeline_item_destroy(TimelineItem* item) {
+void timeline_item_destroy(TimelineItem *item) {
 }
 
 AppInstallId worker_preferences_get_default_worker(void) {
@@ -138,15 +141,14 @@ AppInstallId worker_preferences_get_default_worker(void) {
 }
 
 #include "process_management/process_loader.h"
-void * process_loader_load(const PebbleProcessMd *app_md, PebbleTask task,
-                         MemorySegment *destination) {
+void *process_loader_load(const PebbleProcessMd *app_md, PebbleTask task,
+                          MemorySegment *destination) {
   return app_md->main_func;
 }
 
 #include "pbl/services/process_management/app_storage.h"
-AppStorageGetAppInfoResult app_storage_get_process_info(PebbleProcessInfo* app_info,
-                                                        uint8_t *build_id_out,
-                                                        AppInstallId app_id,
+AppStorageGetAppInfoResult app_storage_get_process_info(PebbleProcessInfo *app_info,
+                                                        uint8_t *build_id_out, AppInstallId app_id,
                                                         PebbleTask task) {
   return GET_APP_INFO_COULD_NOT_READ_FORMAT;
 }
@@ -181,6 +183,14 @@ int16_t shell_prefs_get_automatic_timezone_id(void) {
 bool shell_prefs_can_coredump_on_request() {
   // it would be good to have a core dump escape hatch in PRF
   return true;
+}
+
+// PRF has no preference storage, so the content size is fixed at the runtime platform default.
+void system_theme_set_content_size(PreferredContentSize content_size) {
+}
+
+PreferredContentSize system_theme_get_content_size(void) {
+  return system_theme_get_default_content_size_for_runtime_platform();
 }
 
 AlertMask alerts_get_mask(void) {
@@ -219,6 +229,13 @@ bool touch_is_globally_enabled(void) {
 }
 
 void touch_set_globally_enabled(bool enable) {
+}
+
+bool touch_navigation_menu_is_enabled(void) {
+  return false;
+}
+
+void touch_set_navigation_menu_enabled(bool enable) {
 }
 
 bool bt_persistent_storage_get_airplane_mode_enabled(void) {
@@ -273,9 +290,11 @@ int16_t timeline_peek_get_obstruction_origin_y(void) {
   return DISP_ROWS;
 }
 
-void timeline_peek_handle_process_start(void) { }
+void timeline_peek_handle_process_start(void) {
+}
 
-void timeline_peek_handle_process_kill(void) { }
+void timeline_peek_handle_process_kill(void) {
+}
 
 void pbl_analytics_external_collect_pfs_stats(void) {
 }

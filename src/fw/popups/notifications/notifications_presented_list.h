@@ -3,16 +3,14 @@
 
 #pragma once
 
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 #include "pbl/services/notifications/notification_types.h"
-
-#include <inttypes.h>
 
 //! @file notifications_presented_list.h
 //!
 //! \brief File that manages a list of presented notifications.
 
-typedef struct  {
+typedef struct {
   ListNode list_node;
   NotificationInfo notif;
 } NotifList;
@@ -43,8 +41,8 @@ void notifications_presented_list_add(Uuid *id, NotificationType type);
 
 //! Add the given notification to the presented list
 //! The comparator will have to compare two NotifList*
-void notifications_presented_list_add_sorted(Uuid *id, NotificationType type,
-                                             Comparator comparator, bool ascending);
+void notifications_presented_list_add_sorted(Uuid *id, NotificationType type, Comparator comparator,
+                                             bool ascending);
 
 //! Get the type of the given notification
 NotificationType notifications_presented_list_get_type(Uuid *id);
@@ -61,11 +59,13 @@ void notifications_presented_list_init(void);
 
 typedef void (*NotificationListEachCallback)(Uuid *id, NotificationType type, void *cb_data);
 
-//! Executes the specified callback for each notificaiton in the presented list
+//! Executes the specified callback for each notification in the presented list
 //! @param callback If null this function is a no-op
+//! @param cb_data Context passed to the callback
 void notifications_presented_list_each(NotificationListEachCallback callback, void *cb_data);
 
 //! Deinits the notification presented list
 //! @param callback - If non-null, notifies the caller what item is being removed.
 //!            The callback routine should not try to modify the notification list
+//! @param cb_data Context passed to the callback
 void notifications_presented_list_deinit(NotificationListEachCallback callback, void *cb_data);

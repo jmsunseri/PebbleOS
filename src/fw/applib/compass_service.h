@@ -3,10 +3,7 @@
 
 #pragma once
 
-#include <stdbool.h>
-#include <stdint.h>
-
-#include "drivers/mag.h"
+#include <pbl/drivers/mag.h>
 #include "pbl/services/ecompass.h"
 
 //! @addtogroup Foundation

@@ -8,7 +8,7 @@
 
 #include "system/status_codes.h"
 #include "pbl/services/timeline/item.h"
-#include "util/iterator.h"
+#include "pbl/util/iterator.h"
 
 #include <stdint.h>
 
@@ -36,9 +36,8 @@ status_t pin_db_next_item_header(TimelineItem *next_item_out,
                                  TimelineItemStorageFilterCallback filter);
 
 //! Determines whether or not the timeline entry has expired based on its age
-//! @param pin_timestamp - the timestamp of the pin being removed
+//! @param pin_end_timestamp - the timestamp of the pin being removed
 bool pin_db_has_entry_expired(time_t pin_end_timestamp);
-
 
 ///////////////////////////////////////////
 // BlobDB Boilerplate (see blob_db/api.h)
@@ -62,6 +61,6 @@ status_t pin_db_compact(void);
 
 status_t pin_db_is_dirty(bool *is_dirty_out);
 
-BlobDBDirtyItem* pin_db_get_dirty_list(void);
+BlobDBDirtyItem *pin_db_get_dirty_list(void);
 
 status_t pin_db_mark_synced(const uint8_t *key, int key_len);

@@ -1,12 +1,12 @@
-#include "drivers/otp.h"
+#include <pbl/drivers/otp.h>
 
 static char slot[32];
 
-char * otp_get_slot(const uint8_t index) {
+char *otp_get_slot(const uint8_t index) {
   return slot;
 }
 
-uint8_t * otp_get_lock(const uint8_t index) {
+uint8_t *otp_get_lock(const uint8_t index) {
   return (uint8_t *)slot;
 }
 

@@ -9,12 +9,11 @@
 #include "applib/ui/text_layer.h"
 #include "pbl/services/evented_timer.h"
 #include "pbl/services/timeline/timeline_resources.h"
-#include "pbl/services/timeline/item.h"
 
 #define PEEK_LAYER_UNFOLD_DURATION 500
-#define PEEK_LAYER_SCALE_DURATION 300
+#define PEEK_LAYER_SCALE_DURATION  300
 
-#define MAX_PEEK_LAYER_TEXT_LEN 40
+#define MAX_PEEK_LAYER_TEXT_LEN   40
 #define MAX_PEEK_LAYER_NUMBER_LEN 10
 
 //! Icon position adjustment applied to user given frames
@@ -46,7 +45,6 @@ typedef struct {
   bool show_dot;
 } PeekLayer;
 
-
 //! Create a peek layer with a frame.
 PeekLayer *peek_layer_create(GRect frame);
 
@@ -72,9 +70,9 @@ void peek_layer_set_icon_with_size(PeekLayer *peek_layer, const TimelineResource
                                    TimelineResourceSize res_size, GRect icon_from);
 
 //! Set the peek layer to have a stretching animation to a frame.
-//! @param align_in_frame if true, scale the image to the resource size and align within icon_to
-//! instead of scaling to the icon_to size
 void peek_layer_set_scale_to(PeekLayer *peek_layer, GRect icon_to);
+//! Same as peek_layer_set_scale_to, but with an image. If align_in_frame is true, scale the
+//! image to the resource size and align within icon_to instead of scaling to the icon_to size.
 void peek_layer_set_scale_to_image(PeekLayer *peek_layer, const TimelineResourceInfo *timeline_res,
                                    TimelineResourceSize res_size, GRect icon_to,
                                    bool align_in_frame);

@@ -5,19 +5,18 @@
 
 //!@file app_menu_data_source.h
 //!
-//! This file provides a utility for populating a MenuLayer with the apps that are currently installed. This should
-//! only be used by system apps such as the Launcher or the Watchface Selector apps, as it integrates tightly with
-//! app_install_manager.
+//! This file provides a utility for populating a MenuLayer with the apps that are currently
+//! installed. This should only be used by system apps such as the Launcher or the Watchface
+//! Selector apps, as it integrates tightly with app_install_manager.
 
 #include "applib/ui/kino/kino_reel.h"
 #include "applib/ui/menu_layer.h"
-#include "os/mutex.h"
 #include "process_management/app_install_manager.h"
 #include "process_management/pebble_process_info.h"
 #include "process_management/pebble_process_md.h"
 #include "pbl/services/process_management/app_order_storage.h"
-#include "util/attributes.h"
-#include "util/list.h"
+#include "pbl/kernel/compiler.h"
+#include "pbl/util/list.h"
 
 struct AppMenuDataSource;
 
@@ -30,7 +29,7 @@ typedef enum AppMenuStorageOrder {
   AppMenuStorageOrderGeneralOrderOffset
 } AppMenuStorageOrder;
 
-typedef struct PACKED AppMenuNode {
+typedef struct PBL_PACKED AppMenuNode {
   ListNode node;
   AppInstallId install_id;
   ResAppNum app_num;
@@ -42,7 +41,7 @@ typedef struct PACKED AppMenuNode {
   ProcessVisibility visibility;
   Version sdk_version;
   unsigned int storage_order; //!< See \ref AppMenuStorageOrder for special values of this field
-  unsigned int record_order; //!< 0 means not in the app registry
+  unsigned int record_order;  //!< 0 means not in the app registry
 } AppMenuNode;
 
 // Clang makes the size of enums like AppMenuStorageOrder larger than the minimum size needed to
@@ -80,22 +79,22 @@ typedef struct AppMenuDataSource {
   bool is_list_loaded;
 } AppMenuDataSource;
 
-//! Initalize the AppMenuDataSource
+//! Initialize the AppMenuDataSource
 void app_menu_data_source_init(AppMenuDataSource *source,
-                               const AppMenuDataSourceCallbacks *handlers,
-                               void *callback_context);
+                               const AppMenuDataSourceCallbacks *handlers, void *callback_context);
 
-//! Deinitalize the AppMenuDataSource
+//! Deinitialize the AppMenuDataSource
 void app_menu_data_source_deinit(AppMenuDataSource *source);
 
 //! Will load the icons for each `AppMenuNode`. Will automatically be unloaded when
 //! `app_menu_data_source_deinit` is called.
+//! @param source The AppMenuDataSource to enable icons for
 //! @param fallback_icon_id The fallback resource id that should be used if the entry does not have
 //! an icon.
 void app_menu_data_source_enable_icons(AppMenuDataSource *source, uint32_t fallback_icon_id);
 
 //! Returns the AppMenuNode at the given index.
-AppMenuNode* app_menu_data_source_get_node_at_index(AppMenuDataSource *source, uint16_t row_index);
+AppMenuNode *app_menu_data_source_get_node_at_index(AppMenuDataSource *source, uint16_t row_index);
 
 //! Returns the AppMenuNode with the given AppInstallId.
 uint16_t app_menu_data_source_get_index_of_app_with_install_id(AppMenuDataSource *source,

@@ -7,11 +7,9 @@
 #include "kernel/pbl_malloc.h"
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/system_task.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/slist.h"
-
-#include <inttypes.h>
+#include "pbl/util/slist.h"
 
 PBL_LOG_MODULE_DECLARE(service_comm_session, CONFIG_SERVICE_COMM_SESSION_LOG_LEVEL);
 
@@ -49,36 +47,35 @@ typedef struct {
   uint8_t payload[];
 } DefaultReceiverImpl;
 
-//! Pending receiver lists: completed messages are appended here instead of each
-//! getting their own system_task/launcher_task callback. A single callback is
-//! scheduled per list and drains all entries when it fires. This prevents the
-//! system task queue from overflowing when many Pebble Protocol messages arrive
-//! in rapid succession (e.g. after BT reconnect).
+//! Pending receiver lists. One callback per list is in flight at a time; it
+//! handles one message and reschedules until empty. Coalescing bounds the
+//! system task queue; one-per-callback keeps a slow handler from starving the
+//! task watchdog.
 static SingleListNode *s_pending_bg_head;
 static bool s_bg_callback_pending;
 
 static SingleListNode *s_pending_main_head;
 static bool s_main_callback_pending;
 
-static Receiver *prv_default_kernel_receiver_prepare(
-    CommSession *session, const PebbleProtocolEndpoint *endpoint,
-    size_t total_payload_size) {
+static Receiver *prv_default_kernel_receiver_prepare(CommSession *session,
+                                                     const PebbleProtocolEndpoint *endpoint,
+                                                     size_t total_payload_size) {
   if (total_payload_size == 0) {
-    return NULL;  // Ignore zero-length messages
+    return NULL; // Ignore zero-length messages
   }
 
   size_t size_needed = sizeof(DefaultReceiverImpl) + total_payload_size;
   DefaultReceiverImpl *receiver = kernel_zalloc(size_needed);
 
   if (!receiver) {
-    PBL_LOG_WRN("Could not allocate receiver, handler:%p size:%d",
-            endpoint->handler, (int)size_needed);
+    PBL_LOG_WRN("Could not allocate receiver, handler:%p size:%d", endpoint->handler,
+                (int)size_needed);
     return NULL;
   }
 
   const bool should_use_kernel_main =
       (endpoint->receiver_opt == &g_default_kernel_receiver_opt_main);
-  *receiver = (DefaultReceiverImpl) {
+  *receiver = (DefaultReceiverImpl){
     .session = session,
     .endpoint = endpoint,
     .total_payload_size = total_payload_size,
@@ -89,8 +86,8 @@ static Receiver *prv_default_kernel_receiver_prepare(
   return (Receiver *)receiver;
 }
 
-static void prv_default_kernel_receiver_write(
-    Receiver *receiver, const uint8_t *data, size_t length) {
+static void prv_default_kernel_receiver_write(Receiver *receiver, const uint8_t *data,
+                                              size_t length) {
   DefaultReceiverImpl *impl = (DefaultReceiverImpl *)receiver;
 
   PBL_ASSERTN((impl->curr_pos + length) <= impl->total_payload_size);
@@ -100,11 +97,10 @@ static void prv_default_kernel_receiver_write(
 }
 
 static void prv_wipe_receiver_data(DefaultReceiverImpl *receiver) {
-  *receiver = (DefaultReceiverImpl) { };
+  *receiver = (DefaultReceiverImpl){};
 }
 
-static void prv_append_to_pending_list(DefaultReceiverImpl *impl,
-                                       SingleListNode **head) {
+static void prv_append_to_pending_list(DefaultReceiverImpl *impl, SingleListNode **head) {
   slist_init(&impl->node);
   if (*head) {
     slist_append(*head, &impl->node);
@@ -113,30 +109,50 @@ static void prv_append_to_pending_list(DefaultReceiverImpl *impl,
   }
 }
 
-static void prv_drain_pending_list(SingleListNode **head,
-                                   bool *callback_pending) {
-  // Snapshot and detach the list so new items that arrive while we are
-  // processing do not extend the current batch indefinitely.
-  SingleListNode *list = *head;
-  *head = NULL;
-  *callback_pending = false;
-
-  while (list) {
-    DefaultReceiverImpl *impl = (DefaultReceiverImpl *)list;
-    list = slist_get_next(list);
+//! Handle one pending message; returns true if more remain. One per callback
+//! so a slow handler (e.g. data logging blocking ~500ms per send) can't starve
+//! the watchdog: the draining task feeds it between callbacks.
+static bool prv_drain_one_pending(SingleListNode **head) {
+  DefaultReceiverImpl *impl = (DefaultReceiverImpl *)*head;
+  if (impl) {
+    *head = slist_get_next(&impl->node);
     PBL_ASSERTN(impl->handler_scheduled && impl->session);
     impl->endpoint->handler(impl->session, impl->payload, impl->total_payload_size);
     prv_wipe_receiver_data(impl);
     kernel_free(impl);
   }
+  return (*head != NULL);
 }
 
 static void prv_default_kernel_receiver_bg_cb(void *data) {
-  prv_drain_pending_list(&s_pending_bg_head, &s_bg_callback_pending);
+  if (prv_drain_one_pending(&s_pending_bg_head)) {
+    // Reschedule rather than loop so the watchdog gets fed between handlers.
+    system_task_add_callback(prv_default_kernel_receiver_bg_cb, NULL);
+    return;
+  }
+
+  s_bg_callback_pending = false;
+
+  // finish() runs on another task; re-check so a message appended during the
+  // window above isn't stranded.
+  if (s_pending_bg_head) {
+    s_bg_callback_pending = true;
+    system_task_add_callback(prv_default_kernel_receiver_bg_cb, NULL);
+  }
 }
 
 static void prv_default_kernel_receiver_main_cb(void *data) {
-  prv_drain_pending_list(&s_pending_main_head, &s_main_callback_pending);
+  if (prv_drain_one_pending(&s_pending_main_head)) {
+    launcher_task_add_callback(prv_default_kernel_receiver_main_cb, NULL);
+    return;
+  }
+
+  s_main_callback_pending = false;
+
+  if (s_pending_main_head) {
+    s_main_callback_pending = true;
+    launcher_task_add_callback(prv_default_kernel_receiver_main_cb, NULL);
+  }
 }
 
 static void prv_default_kernel_receiver_finish(Receiver *receiver) {
@@ -144,8 +160,7 @@ static void prv_default_kernel_receiver_finish(Receiver *receiver) {
   impl->handler_scheduled = true;
 
   if ((int)impl->total_payload_size != impl->curr_pos) {
-    PBL_LOG_WRN("Got fewer bytes than expected for handler %p",
-            impl->endpoint->handler);
+    PBL_LOG_WRN("Got fewer bytes than expected for handler %p", impl->endpoint->handler);
   }
 
   // Coalesce callbacks: append to the pending list and only schedule a new

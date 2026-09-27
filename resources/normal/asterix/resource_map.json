@@ -13,7 +13,8 @@
     {
       "type": "raw",
       "name": "NO_EVENTS_LARGE",
-      "file": "normal/snowy/images/Pebble_80x80_No_events.pdc"
+      "file": "normal/snowy/images/Pebble_80x80_No_events.pdc",
+      "builtin": true
     },
     {
       "type": "raw",
@@ -55,7 +56,8 @@
     {
       "type": "raw",
       "name": "RESULT_MUTE_LARGE",
-      "file": "normal/snowy/images/animated_pdcs/Pebble_80x80_Mute.pdc"
+      "file": "normal/snowy/images/animated_pdcs/Pebble_80x80_Mute.pdc",
+      "builtin": true
     },
     {
       "type": "raw",
@@ -298,6 +300,36 @@
       "type": "vibe",
       "name": "VIBE_SCORE_GENTLE",
       "file": "normal/snowy/vibes/gentle.json"
+    },
+    {
+      "type": "vibe",
+      "name": "VIBE_SCORE_DOUBLE_PULSE_MEDIUM",
+      "file": "normal/snowy/vibes/double_pulse_medium.json"
+    },
+    {
+      "type": "vibe",
+      "name": "VIBE_SCORE_PEBBLE_MORSE",
+      "file": "normal/snowy/vibes/pebble_morse.json"
+    },
+    {
+      "type": "vibe",
+      "name": "VIBE_SCORE_HEARTBEAT",
+      "file": "normal/snowy/vibes/heartbeat.json"
+    },
+    {
+      "type": "vibe",
+      "name": "VIBE_SCORE_DOUBLE_TAP",
+      "file": "normal/snowy/vibes/double_tap.json"
+    },
+    {
+      "type": "vibe",
+      "name": "VIBE_SCORE_WAVE",
+      "file": "normal/snowy/vibes/wave.json"
+    },
+    {
+      "type": "vibe",
+      "name": "VIBE_SCORE_IMPERIAL",
+      "file": "normal/snowy/vibes/imperial.json"
     },
     {
       "type": "png",

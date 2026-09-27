@@ -5,8 +5,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "animation_interpolate.h"
-#include "drivers/rtc.h"
-#include "util/list.h"
+#include <pbl/drivers/rtc.h>
+#include "pbl/util/list.h"
 
 //! @file animation.h
 //! @addtogroup UI
@@ -21,7 +21,6 @@
 //!
 //! Refer to the \htmlinclude UiFramework.html (chapter "Animation") for a conceptual overview
 //! of the animation framework and on how to write custom animations.
-
 
 //!   @{
 
@@ -67,9 +66,27 @@ typedef struct ImmutableAnimation ImmutableAnimation;
 
 //! @internal
 //! aimed to duration of a single frame
+//! Animation durations are derived from this, so it defines the design speed
+//! of animations
+#if defined(CONFIG_PLATFORM_GABBRO)
+//! Slightly quicker than the 33 ms design value: gabbro's ~21 Hz display
+//! shows fewer, larger motion steps, which read as sluggish at design speed
+#define ANIMATION_TARGET_FRAME_INTERVAL_MS 28
+#else
 //! 1000ms / 30 Hz
 #define ANIMATION_TARGET_FRAME_INTERVAL_MS 33
+#endif
 
+//! @internal
+//! interval at which the animation service schedules frames
+#if defined(CONFIG_PLATFORM_GABBRO)
+//! Gabbro's display (Sharp LS013B7DD02) is spec-limited to ~21 Hz full-frame
+//! updates; scheduling frames faster than the panel can show them produces
+//! uneven, coalesced updates
+#define ANIMATION_RENDER_FRAME_INTERVAL_MS 48
+#else
+#define ANIMATION_RENDER_FRAME_INTERVAL_MS ANIMATION_TARGET_FRAME_INTERVAL_MS
+#endif
 
 //! The type used to represent how far an animation has progressed. This is passed to the
 //! animation's update handler
@@ -96,8 +113,7 @@ typedef enum {
   AnimationCurve_Reserved2 = 7,
 } AnimationCurve;
 
-
-//! Creates a new Animation on the heap and initalizes it with the default values.
+//! Creates a new Animation on the heap and initializes it with the default values.
 //!
 //! * Duration: 250ms,
 //! * Curve: \ref AnimationCurveEaseInOut (ease-in-out),
@@ -108,7 +124,7 @@ typedef enum {
 //! * Scheduled: no
 //! @return A pointer to the animation. `NULL` if the animation could not
 //! be created
-Animation * animation_create(void);
+Animation *animation_create(void);
 
 //! Destroys an Animation previously created by animation_create.
 //! @return true if successful, false on failure
@@ -117,7 +133,6 @@ bool animation_destroy(Animation *animation);
 // Clone an existing animation. Especially useful when it will be used in 2 or more other
 // sequence or spawn animations.
 Animation *animation_clone(Animation *from);
-
 
 //! Create a new sequence animation from a list of 2 or more other animations. The returned
 //! animation owns the animations that were provided as arguments and no further write operations
@@ -374,7 +389,7 @@ typedef struct AnimationHandlers {
 bool animation_set_handlers(Animation *animation, AnimationHandlers callbacks, void *context);
 
 //! Gets the callbacks for the animation.
-//! @param animation The animation for which to set up the callbacks.
+//! @param animation_h The animation for which to set up the callbacks.
 //! @return the callbacks in use by this animation
 AnimationHandlers animation_get_handlers(Animation *animation_h);
 
@@ -457,7 +472,7 @@ typedef void (*AnimationSetupImplementation)(Animation *animation);
 //! @internal
 //! @see animation_timing.h
 typedef void (*AnimationUpdateImplementation)(Animation *animation,
-              const AnimationProgress progress);
+                                              const AnimationProgress progress);
 
 //! Pointer to function that (optionally) cleans up the animation.
 //! This callback is called when the animation is removed from the scheduler.
@@ -499,7 +514,7 @@ typedef struct AnimationImplementation {
 //! @param animation The animation for which to get the implementation.
 //! @see AnimationImplementation
 //! @return NULL if animation implementation has not been setup.
-const AnimationImplementation* animation_get_implementation(Animation *animation);
+const AnimationImplementation *animation_get_implementation(Animation *animation);
 
 //! Sets the implementation of the custom animation.
 //! When implementing custom animations, use this function to specify what functions need to be

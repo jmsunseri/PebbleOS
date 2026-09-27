@@ -1,29 +1,27 @@
 /* SPDX-FileCopyrightText: 2026 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/backlight.h"
+#include <pbl/drivers/backlight.h>
 
 #include "board/board.h"
 #include "console/prompt.h"
 #ifdef CONFIG_BACKLIGHT_HAS_COLOR
-#include "drivers/backlight.h"
+#include <pbl/drivers/backlight.h>
 #endif
-
-#include <stdlib.h>
 
 #define REG32(addr) (*(volatile uint32_t *)(addr))
 
 // Display register offsets (must match QEMU pebble-display)
-#define DISP_CTRL        0x000
-#define DISP_BRIGHTNESS  0x018
-#define DISP_BL_RED      0x024
-#define DISP_BL_GREEN    0x028
-#define DISP_BL_BLUE     0x02C
-#define CTRL_UPDATE      (1 << 1)
+#define DISP_CTRL       0x000
+#define DISP_BRIGHTNESS 0x018
+#define DISP_BL_RED     0x024
+#define DISP_BL_GREEN   0x028
+#define DISP_BL_BLUE    0x02C
+#define CTRL_UPDATE     (1 << 1)
 
 // Brightness levels for QEMU display grayscale path
-#define BACKLIGHT_OFF_LEVEL  180
-#define BACKLIGHT_ON_LEVEL   255
+#define BACKLIGHT_OFF_LEVEL 180
+#define BACKLIGHT_ON_LEVEL  255
 
 static bool s_initialized;
 
@@ -77,6 +75,11 @@ void backlight_set_brightness(uint8_t brightness) {
   REG32(QEMU_DISPLAY_BASE + DISP_BRIGHTNESS) = level;
   REG32(QEMU_DISPLAY_BASE + DISP_CTRL) |= CTRL_UPDATE;
 #endif
+}
+
+uint8_t backlight_get_level(uint8_t brightness) {
+  // Emulated backlight: every brightness value is distinct.
+  return brightness;
 }
 
 void backlight_refresh(void) {

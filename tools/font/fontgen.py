@@ -3,17 +3,18 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-import freetype
+import itertools
+import json
 import os
 import re
 import struct
 import sys
-import itertools
-import json
+
+import freetype
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
 
-# Font v3 -- https://pebbletechnology.atlassian.net/wiki/display/DEV/Pebble+Resource+Pack+Format
+# Font v3 -- see docs/reference/formats/font.md for the rendered spec
 #   FontInfo
 #       (uint8_t)  version                           - v1
 #       (uint8_t)  max_height                        - v1
@@ -44,27 +45,26 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
 #       from the start of offset_tables, and offset_table_size gives the number of glyph_tables in
 #       the list (i.e., the number of codepoints that hash to the same value).
 #
-#   (uint32_t) offset_tables[][]
+#   offset_tables[][]
 #       this list of tables contains offsets into the glyph_table for the codepoint.
-#       each offset is counted in 32-bit blocks from the start of glyph_table.
+#       each offset is counted in bytes from the start of glyph_table (v1 files
+#       counted 32-bit blocks instead).
 #       packed:     (codepoint_bytes [uint16_t | uint32_t]) codepoint
 #                   (features[0] [uint16_t | uint32_t]) offset
 #
-#   (uint32_t) glyph_table[]
-#       [0]: the 32-bit block for offset 0 is used to indicate that a glyph is not supported
-#       then for each glyph:
-#       [offset + 0]  packed:   (int_8) offset_top
-#                               (int_8) offset_left,
-#                              (uint_8) bitmap_height,       NB: in v3, if RLE4 compressed, this
-#                                                                field is contains the number of
+#   glyph_table[]
+#       starts with one zeroed 32-bit block: offset 0 indicates that a glyph is
+#       not supported. then for each glyph, a packed 5-byte header:
+#                              (uint_8) bitmap_width
+#                              (uint_8) bitmap_height        NB: in v3, if RLE4 compressed, this
+#                                                                field contains the number of
 #                                                                RLE4 units.
-#                              (uint_8) bitmap_width (LSB)
-#
-#       [offset + 1]           (int_8) horizontal_advance
-#                              (24 bits) zero padding
-#       [offset + 2] bitmap data (unaligned rows of bits), padded with 0's at
-#       the end to make the bitmap data as a whole use multiples of 32-bit
-#       blocks
+#                               (int_8) offset_left
+#                               (int_8) offset_top
+#                               (int_8) horizontal_advance
+#       followed immediately by the bitmap data (unaligned rows of bits), padded
+#       with 0's at the end to make the bitmap data a multiple of 4 bytes
+#       (v1 files used a different, 8-byte glyph header)
 
 MIN_CODEPOINT = 0x20
 MAX_2_BYTES_CODEPOINT = 0xFFFF
@@ -90,7 +90,7 @@ MAX_GLYPHS = 256
 def grouper(n, iterable, fillvalue=None):
     """grouper(3, 'ABCDEFG', 'x') --> ABC DEF Gxx"""
     args = [iter(iterable)] * n
-    return itertools.zip_longest(fillvalue=fillvalue, *args)
+    return itertools.zip_longest(*args, fillvalue=fillvalue)
 
 
 def hasher(codepoint, num_glyphs):
@@ -106,10 +106,15 @@ def bits(x):
 
 
 class Font:
-    def __init__(self, ttf_path, height, max_glyphs, max_glyph_size, legacy):
+    def __init__(
+        self, ttf_path, height, max_glyphs, max_glyph_size, legacy, baseline=None
+    ):
         self.version = FONT_VERSION_3
         self.ttf_path = ttf_path
         self.max_height = int(height)
+        # Baseline row; defaults to max_height. Extended fonts pass the base
+        # font's baseline so both align on a mixed line.
+        self.baseline = int(baseline) if baseline is not None else self.max_height
         self.legacy = legacy
         self.face = freetype.Face(self.ttf_path)
         self.face.set_pixel_sizes(0, self.max_height)
@@ -129,29 +134,18 @@ class Font:
         self.offset_size_bytes = 4
         self.features = 0
 
-        self.glyph_header = "".join(
-            (
-                "<",  # little_endian
-                "B",  # bitmap_width
-                "B",  # bitmap_height
-                "b",  # offset_left
-                "b",  # offset_top
-                "b",  # horizontal_advance
-            )
-        )
+        self.glyph_header = "<BBbbb"
 
     def set_compression(self, engine):
         if self.version != FONT_VERSION_3:
-            raise Exception(
-                "Compression being set but version != 3 ({})".format(self.version)
+            raise RuntimeError(
+                f"Compression being set but version != 3 ({self.version})"
             )
         if engine == "RLE4":
             self.features |= FEATURE_RLE4
         else:
-            raise Exception(
-                "Unsupported compression engine: '{}'. Font {}".format(
-                    engine, self.ttf_path
-                )
+            raise RuntimeError(
+                f"Unsupported compression engine: '{engine}'. Font {self.ttf_path}"
             )
 
     def set_version(self, version):
@@ -164,17 +158,17 @@ class Font:
         if regex_string != ".*":
             try:
                 self.regex = re.compile(regex_string)
-            except Exception:
-                raise Exception(
+            except re.error as e:
+                raise RuntimeError(
                     "Supplied filter argument was not a valid regular expression."
-                    "Font: {}".format(self.ttf_path)
-                )
+                    f"Font: {self.ttf_path}"
+                ) from e
         else:
             self.regex = None
 
     def set_codepoint_list(self, list_path):
-        codepoints_file = open(list_path)
-        codepoints_json = json.load(codepoints_file)
+        with open(list_path) as codepoints_file:
+            codepoints_json = json.load(codepoints_file)
         self.codepoints = [int(cp) for cp in codepoints_json["codepoints"]]
 
     def is_supported_glyph(self, codepoint):
@@ -240,7 +234,7 @@ class Font:
         src_ptr = self.max_glyph_size - len(glyph_packed)
 
         def glyph_packed_iterator(tbl, num):
-            for i in range(0, num):
+            for i in range(num):
                 yield struct.unpack("<B", tbl[i])[0]
 
         # Generate glyph buffer. Ignore the header
@@ -254,10 +248,8 @@ class Font:
         total_length = 0
         while rle_units > 0:
             if src_ptr >= self.max_glyph_size:
-                raise Exception(
-                    "Error: input stream too large for buffer. Font {}".format(
-                        self.ttf_path
-                    )
+                raise RuntimeError(
+                    f"Error: input stream too large for buffer. Font {self.ttf_path}"
                 )
 
             unit_pair = bitmap[src_ptr]
@@ -275,16 +267,12 @@ class Font:
 
                 if out_num_bits >= 8:
                     if dst_ptr >= src_ptr:
-                        raise Exception(
-                            "Error: unable to RLE4 decode in place! Overrun. Font {}".format(
-                                self.ttf_path
-                            )
+                        raise RuntimeError(
+                            f"Error: unable to RLE4 decode in place! Overrun. Font {self.ttf_path}"
                         )
                     if dst_ptr >= self.max_glyph_size:
-                        raise Exception(
-                            "Error: output bitmap too large for buffer. Font {}".format(
-                                self.ttf_path
-                            )
+                        raise RuntimeError(
+                            f"Error: output bitmap too large for buffer. Font {self.ttf_path}"
                         )
                     bitmap[dst_ptr] = out & 0xFF
                     dst_ptr += 1
@@ -321,7 +309,7 @@ class Font:
         width = bitmap.width
         height = bitmap.rows
         left = self.face.glyph.bitmap_left
-        bottom = self.max_height - self.face.glyph.bitmap_top
+        bottom = self.baseline - self.face.glyph.bitmap_top
         pixel_mode = self.face.glyph.bitmap.pixel_mode
 
         glyph_packed = []
@@ -338,19 +326,17 @@ class Font:
                     glyph_bitmap.extend([1 if val > 127 else 0])
             else:
                 # freetype-py should never give us a value not in (1,2)
-                raise Exception(
-                    "Unsupported pixel mode: {}. Font {}".format(
-                        pixel_mode, self.ttf_path
-                    )
+                raise RuntimeError(
+                    f"Unsupported pixel mode: {pixel_mode}. Font {self.ttf_path}"
                 )
 
             if self.features & FEATURE_RLE4:
                 # HACK WARNING: override the height with the number of RLE4 units.
                 glyph_packed, height = self.compress_glyph_RLE4(glyph_bitmap)
                 if height > 255:
-                    raise Exception(
+                    raise RuntimeError(
                         "Unable to RLE4 compress -- more than 255 units required"
-                        "({}). Font {}".format(height, self.ttf_path)
+                        f"({height}). Font {self.ttf_path}"
                     )
                 # Check that we can in-place decompress. Will raise an exception if not.
                 self.check_decompress_glyph_RLE4(glyph_packed, width, height)
@@ -364,10 +350,8 @@ class Font:
                 # Confirm that we're smaller than the cache size
                 size = ((width * height) + (8 - 1)) // 8
                 if size > self.max_glyph_size:
-                    raise Exception(
-                        "Glyph too large! codepoint {}: {} > {}. Font {}".format(
-                            codepoint, size, self.max_glyph_size, self.ttf_path
-                        )
+                    raise RuntimeError(
+                        f"Glyph too large! codepoint {codepoint}: {size} > {self.max_glyph_size}. Font {self.ttf_path}"
                     )
 
         glyph_header = struct.pack(
@@ -422,7 +406,7 @@ class Font:
                 )
                 bucket_sizes[glyph_hash] = bucket_sizes[glyph_hash] + 1
                 if bucket_sizes[glyph_hash] > OFFSET_TABLE_MAX_SIZE:
-                    print("error: %d > 127" % bucket_sizes[glyph_hash])
+                    print(f"error: {bucket_sizes[glyph_hash]:d} > 127")
             return bucket_sizes
 
         def add_glyph(codepoint, next_offset, gindex, glyph_indices_lookup):
@@ -443,9 +427,8 @@ class Font:
 
         def codepoint_is_in_subset(codepoint):
             if codepoint not in (WILDCARD_CODEPOINT, ELLIPSIS_CODEPOINT):
-                if self.regex is not None:
-                    if self.regex.match(chr(codepoint)) is None:
-                        return False
+                if self.regex is not None and self.regex.match(chr(codepoint)) is None:
+                    return False
                 if codepoint not in self.codepoints:
                     return False
             return True
@@ -455,7 +438,7 @@ class Font:
         # padding, no idea why.
         self.glyph_table.append(struct.pack("<I", 0))
         self.number_of_glyphs = 0
-        glyph_indices_lookup = dict()
+        glyph_indices_lookup = {}
         next_offset = 4
         codepoint, gindex = self.face.get_first_char()
 
@@ -471,16 +454,14 @@ class Font:
                 break
 
             if codepoint is WILDCARD_CODEPOINT:
-                raise Exception(
+                raise RuntimeError(
                     "Wildcard codepoint is used for something else in this font."
-                    "Font {}".format(self.ttf_path)
+                    f"Font {self.ttf_path}"
                 )
 
             if gindex == 0:
-                raise Exception(
-                    "0 index is reused by a non wildcard glyph. Font {}".format(
-                        self.ttf_path
-                    )
+                raise RuntimeError(
+                    f"0 index is reused by a non wildcard glyph. Font {self.ttf_path}"
                 )
 
             if codepoint_is_in_subset(codepoint):

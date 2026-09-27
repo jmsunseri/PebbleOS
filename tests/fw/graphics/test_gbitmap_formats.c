@@ -23,7 +23,7 @@ void test_gbitmap_formats__create_blank(void) {
   const GSize s_full = GSize(DISP_COLS, DISP_ROWS);
   GBitmap *bmp = NULL;
 
-  cl_assert((void*)&bmp->palette == (void*)&bmp->data_row_infos); // union with .palette
+  cl_assert((void *)&bmp->palette == (void *)&bmp->data_row_infos); // union with .palette
 
 #ifdef CONFIG_PLATFORM_GABBRO
   bmp = gbitmap_create_blank(s10, GBitmapFormat1Bit);
@@ -83,10 +83,10 @@ void test_gbitmap_formats__create_blank_with_palette(void) {
 }
 
 void test_gbitmap_formats__display_framebuffer_bytes(void) {
-#ifdef CONFIG_BOARD_FAMILY_ASTERIX
+#ifdef CONFIG_BOARD_ASTERIX
   const size_t expected = 20 * 168; // 20 * 8 == 144px + 2 bytes padding per scanline
 #endif
-#ifdef CONFIG_BOARD_FAMILY_OBELIX
+#ifdef CONFIG_BOARD_OBELIX
   const size_t expected = 200 * 228;
 #endif
 #ifdef CONFIG_PLATFORM_GABBRO
@@ -98,14 +98,14 @@ void test_gbitmap_formats__display_framebuffer_bytes(void) {
 size_t prv_gbitmap_size_for_data(GSize size, GBitmapFormat format);
 
 void test_gbitmap_formats__size_for_data(void) {
-  cl_assert_equal_i( 40, prv_gbitmap_size_for_data(GSize(13, 10), GBitmapFormat1Bit));
+  cl_assert_equal_i(40, prv_gbitmap_size_for_data(GSize(13, 10), GBitmapFormat1Bit));
   cl_assert_equal_i(130, prv_gbitmap_size_for_data(GSize(13, 10), GBitmapFormat8Bit));
-  cl_assert_equal_i( 20, prv_gbitmap_size_for_data(GSize(13, 10), GBitmapFormat1BitPalette));
-  cl_assert_equal_i( 40, prv_gbitmap_size_for_data(GSize(13, 10), GBitmapFormat2BitPalette));
-  cl_assert_equal_i( 70, prv_gbitmap_size_for_data(GSize(13, 10), GBitmapFormat4BitPalette));
-  cl_assert_equal_i(  0, prv_gbitmap_size_for_data(GSize(13, 10), GBitmapFormat8BitCircular));
+  cl_assert_equal_i(20, prv_gbitmap_size_for_data(GSize(13, 10), GBitmapFormat1BitPalette));
+  cl_assert_equal_i(40, prv_gbitmap_size_for_data(GSize(13, 10), GBitmapFormat2BitPalette));
+  cl_assert_equal_i(70, prv_gbitmap_size_for_data(GSize(13, 10), GBitmapFormat4BitPalette));
+  cl_assert_equal_i(0, prv_gbitmap_size_for_data(GSize(13, 10), GBitmapFormat8BitCircular));
 
   const size_t expected = PBL_IF_RECT_ELSE(0, DISPLAY_FRAMEBUFFER_BYTES);
-  cl_assert_equal_i(expected,
-      prv_gbitmap_size_for_data(GSize(DISP_COLS, DISP_ROWS), GBitmapFormat8BitCircular));
+  cl_assert_equal_i(
+      expected, prv_gbitmap_size_for_data(GSize(DISP_COLS, DISP_ROWS), GBitmapFormat8BitCircular));
 }

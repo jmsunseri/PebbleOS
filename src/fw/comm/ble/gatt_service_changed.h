@@ -6,7 +6,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-//! @file This module contains the "Generic Attribute Profile Service" code, both the server and
+//! @file
+//! This module contains the "Generic Attribute Profile Service" code, both the server and
 //! client parts. Both ends can optionally implement this service (and client). iOS does for example
 //! and so does Pebble. The one characteristic this service has is called "Service Changed". Its
 //! purpose is to indicate to the other side whenever there are changes to the local GATT database
@@ -28,7 +29,7 @@
 struct GAPLEConnection;
 
 //! Optionally handles GATT Value Indications, in case the ATT handle matches the GATT Service
-//! Changed characteristic value for the connection. When it matches, it will autonomously iniate
+//! Changed characteristic value for the connection. When it matches, it will autonomously initiate
 //! GATT Service Discovery to refresh the local GATT cache.
 //! @note bt_lock is assumed to be taken by the caller
 bool gatt_service_changed_client_handle_indication(struct GAPLEConnection *connection,

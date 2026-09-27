@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <stdbool.h>
 #include "applib/graphics/text.h"
 #include "applib/ui/layer.h"
 #include "applib/ui/property_animation_private.h"
@@ -25,10 +24,10 @@ typedef struct {
 } TimelineItemLayer;
 
 //! The layer update proc for the TimelineItemLayer
-void timeline_item_layer_update_proc(Layer* layer, GContext* ctx);
+void timeline_item_layer_update_proc(Layer *layer, GContext *ctx);
 
 //! Initialize a timeline item layer
-//! @param layer a pointer to the TimelineItemLayer to initialize
+//! @param item_layer a pointer to the TimelineItemLayer to initialize
 //! @param frame the frame with which to initialize the layer
 void timeline_item_layer_init(TimelineItemLayer *item_layer, const GRect *frame);
 
@@ -36,10 +35,11 @@ void timeline_item_layer_init(TimelineItemLayer *item_layer, const GRect *frame)
 void timeline_item_layer_deinit(TimelineItemLayer *item_layer);
 
 //! Set the timeline item displayed by the TimelineItemLayer
-//! @param layer a pointer to the TimelineItemLayer
+//! @param item_layer a pointer to the TimelineItemLayer
 //! @param item a pointer to the item to use
+//! @param info a pointer to the TimelineLayoutInfo to use for the item
 void timeline_item_layer_set_item(TimelineItemLayer *item_layer, TimelineItem *item,
-    TimelineLayoutInfo *info);
+                                  TimelineLayoutInfo *info);
 
 //! Down click handler for the TimelineItemLayer
 void timeline_item_layer_down_click_handler(ClickRecognizerRef recognizer, void *context);
@@ -51,4 +51,4 @@ void timeline_item_layer_up_click_handler(ClickRecognizerRef recognizer, void *c
 //! given window to menu layer's internal click config provider. This internal
 //! click configuration provider, will set up the default UP & DOWN handlers
 void timeline_item_layer_set_click_config_onto_window(TimelineItemLayer *item_layer,
-    struct Window *window);
+                                                      struct Window *window);

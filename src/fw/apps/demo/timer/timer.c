@@ -7,7 +7,7 @@
 #include "process_state/app_state/app_state.h"
 #include "applib/ui/ui.h"
 #include "process_management/pebble_process_md.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 static AppTimer *s_timer = NULL;
@@ -63,10 +63,10 @@ static void s_main(void) {
   handle_deinit();
 }
 
-const PebbleProcessMd* timer_app_get_info() {
+const PebbleProcessMd *timer_app_get_info() {
   static const PebbleProcessMdSystem s_app_info = {
     .common.main_func = &s_main,
     .name = "Timer Cancel Test"
   };
-  return (const PebbleProcessMd*) &s_app_info;
+  return (const PebbleProcessMd *)&s_app_info;
 }

@@ -3,18 +3,16 @@
 
 #include "pbl/services/ecompass.h"
 
-#include "util/trig.h"
 #include "kernel/pbl_malloc.h"
-#include "system/logging.h"
-#include "util/math.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/math.h"
 
 #include <stdint.h>
-#include <stdio.h>
 
 PBL_LOG_MODULE_DECLARE(service_ecompass, CONFIG_SERVICE_ECOMPASS_LOG_LEVEL);
 
-#define N_SAMPS    4 // four points define a unique sphere
-#define N_AXIS     3
+#define N_SAMPS 4 // four points define a unique sphere
+#define N_AXIS  3
 static int16_t s_samples[N_SAMPS][N_AXIS];
 
 //
@@ -84,7 +82,7 @@ static int32_t sphere_determinant4x4(int32_t **m, int32_t down_samp) {
     if ((skip_row % 2) == 0) {
       res += det;
     } else {
-      res -=det;
+      res -= det;
     }
   }
 
@@ -101,7 +99,7 @@ static bool sphere_fit(int16_t *solution) {
 
   // determine average value of x, y, & z coordinates
   // and shift by this factor to prevent overflow.
-  int32_t shift_factor[N_AXIS] = { 0 };
+  int32_t shift_factor[N_AXIS] = {0};
   for (int j = 0; j < N_AXIS; j++) {
     for (int i = 0; i < N_SAMPS; i++) {
       shift_factor[j] += s_samples[i][j];
@@ -119,9 +117,8 @@ static bool sphere_fit(int16_t *solution) {
 
   int32_t r[N_SAMPS];
   for (int i = 0; i < N_SAMPS; i++) {
-    r[i] = raw_data[i][0] * raw_data[i][0] +
-        raw_data[i][1] * raw_data[i][1] +
-        raw_data[i][2] * raw_data[i][2];
+    r[i] = raw_data[i][0] * raw_data[i][0] + raw_data[i][1] * raw_data[i][1] +
+           raw_data[i][2] * raw_data[i][2];
   }
 
   // We now find the origin by solving the linear equation discussed above
@@ -184,33 +181,34 @@ cleanup:
 // well). However, the greater the the threshold, the more orientations one
 // must put their watch through in order to get solution sets
 //
-// For now, select a distance metric that should work out of the box for a
-// majority of the middle of the world. However, if no solution sets are found
-// after 45s, fall back to a less aggressive threshold that will work
-// anywhere in the world.
+// For now, start with a distance metric that should work out of the box for a
+// majority of the middle of the world. In weak geomagnetic regions the samples
+// lie on a sphere too small for that metric to ever be satisfiable (e.g. in
+// the South Atlantic Anomaly, ~22 uT, the point-to-line gate at 37 uT is
+// geometrically impossible). So, each time a sample window elapses without a
+// complete point set, relax the threshold one step toward a floor that stays
+// feasible at any realistic field strength and orientation coverage.
 
-#define THRESH_MAX 370 /* 37 uT */
-#define THRESH_MIN 220 /* 22 uT */
+#define THRESH_MAX  370 /* 37 uT */
+#define THRESH_MIN  90  /* 9 uT */
+#define THRESH_STEP 70
 
 // Note: All of the following helper routines operate on the s_samples array
 // defined above and populated by add_raw_mag_sample
 
 static bool pt_to_pt_dist_under_thresh(int idx_a, int idx_b, int32_t thresh) {
   int32_t v_ab[3] = {
-    s_samples[idx_b][0] - s_samples[idx_a][0],
-    s_samples[idx_b][1] - s_samples[idx_a][1],
+    s_samples[idx_b][0] - s_samples[idx_a][0], s_samples[idx_b][1] - s_samples[idx_a][1],
     s_samples[idx_b][2] - s_samples[idx_a][2]
   };
 
-  int32_t dist_sq = v_ab[0] * v_ab[0] + v_ab[1] * v_ab[1] +
-      v_ab[2] * v_ab[2];
+  int32_t dist_sq = v_ab[0] * v_ab[0] + v_ab[1] * v_ab[1] + v_ab[2] * v_ab[2];
 
   return (dist_sq > (thresh * thresh));
 }
 
-static bool pt_to_line_dist_under_thresh(int idx_line_a, int idx_line_b,
-    int idx_pt, int32_t thresh) {
-
+static bool pt_to_line_dist_under_thresh(int idx_line_a, int idx_line_b, int idx_pt,
+                                         int32_t thresh) {
   int32_t s[3] = {
     s_samples[idx_line_b][0] - s_samples[idx_line_a][0],
     s_samples[idx_line_b][1] - s_samples[idx_line_a][1],
@@ -219,30 +217,27 @@ static bool pt_to_line_dist_under_thresh(int idx_line_a, int idx_line_b,
 
   int32_t m1[3] = {
     s_samples[idx_line_a][0] - s_samples[idx_pt][0],
-    s_samples[idx_line_a][1] - s_samples[idx_pt][1],
-    s_samples[idx_line_a][2] - s_samples[idx_pt][2]
+    s_samples[idx_line_a][1] - s_samples[idx_pt][1], s_samples[idx_line_a][2] - s_samples[idx_pt][2]
   };
 
   int32_t m1xs[3] = {
-    m1[1] * s[2] - m1[2] *s[1],
-    -(m1[0] * s[2] - m1[2] * s[0]),
-    m1[0]*s[1] - m1[1] * s[0]
+    m1[1] * s[2] - m1[2] * s[1], -(m1[0] * s[2] - m1[2] * s[0]), m1[0] * s[1] - m1[1] * s[0]
   };
 
-  int64_t dist_sq = ((int64_t)m1xs[0]*m1xs[0] + (int64_t)m1xs[1]*m1xs[1] +
-      (int64_t)m1xs[2]*m1xs[2]) / (s[0]*s[0] + s[1]*s[1] + s[2]*s[2]);
+  int64_t dist_sq =
+      ((int64_t)m1xs[0] * m1xs[0] + (int64_t)m1xs[1] * m1xs[1] + (int64_t)m1xs[2] * m1xs[2]) /
+      (s[0] * s[0] + s[1] * s[1] + s[2] * s[2]);
 
   return (dist_sq > (thresh * thresh));
 }
 
-static bool pt_to_plane_dist_under_thresh(int idx_pln_a, int idx_pln_b,
-    int idx_pln_c, int idx_pt, int32_t thresh) {
-
+static bool pt_to_plane_dist_under_thresh(int idx_pln_a, int idx_pln_b, int idx_pln_c, int idx_pt,
+                                          int32_t thresh) {
   int32_t v_ab[3];
   int32_t v_ac[3];
   for (int i = 0; i < 3; i++) {
-      v_ab[i] = s_samples[idx_pln_b][i] - s_samples[idx_pln_a][i];
-      v_ac[i] = s_samples[idx_pln_c][i] - s_samples[idx_pln_a][i];
+    v_ab[i] = s_samples[idx_pln_b][i] - s_samples[idx_pln_a][i];
+    v_ac[i] = s_samples[idx_pln_c][i] - s_samples[idx_pln_a][i];
   }
 
   int64_t plane_eq[4];
@@ -251,16 +246,14 @@ static bool pt_to_plane_dist_under_thresh(int idx_pln_a, int idx_pln_b,
   plane_eq[2] = v_ab[0] * v_ac[1] - v_ab[1] * v_ac[0];
 
   // solve for d
-  plane_eq[3] = -(plane_eq[0] * s_samples[0][0] +
-      plane_eq[1] * s_samples[0][1] + plane_eq[2] * s_samples[0][2]);
+  plane_eq[3] = -(plane_eq[0] * s_samples[0][0] + plane_eq[1] * s_samples[0][1] +
+                  plane_eq[2] * s_samples[0][2]);
 
   // Distance^2 = (a * xo + b * yo + c * zo + d) / (a^2 + b^2 + c^2)
-  int64_t distance = ABS((plane_eq[0] * s_samples[idx_pt][0] +
-      plane_eq[1] * s_samples[idx_pt][1] + plane_eq[2] * s_samples[idx_pt][2] +
-      plane_eq[3]));
-  int32_t r = integer_sqrt(plane_eq[0] * plane_eq[0] + plane_eq[1] * plane_eq[1]
-      + plane_eq[2] * plane_eq[2]);
-
+  int64_t distance = ABS((plane_eq[0] * s_samples[idx_pt][0] + plane_eq[1] * s_samples[idx_pt][1] +
+                          plane_eq[2] * s_samples[idx_pt][2] + plane_eq[3]));
+  int32_t r = integer_sqrt(plane_eq[0] * plane_eq[0] + plane_eq[1] * plane_eq[1] +
+                           plane_eq[2] * plane_eq[2]);
 
   return ((distance / r) > thresh);
 }
@@ -280,21 +273,22 @@ static int min_max_diff(int16_t *vals, int n_vals) {
 }
 
 #define N_COMP_SAMPS 3
-static MagCalStatus check_correction_value(int16_t *solution,
-    int16_t *saved_solution) {
+
+// stash several of the most recent calibration results. The idea here is if
+// we get multiple readings in a row close to one another than we have locked
+// onto a good set of solutions
+static int16_t s_calib_idx = 0;
+static int16_t s_calib_val[N_AXIS][N_COMP_SAMPS];
+static int s_saved_sample_match = 0;
+
+static MagCalStatus check_correction_value(int16_t *solution, int16_t *saved_solution) {
   const int max_delta_thresh = 50;
 
-  // stash several of the most recent calibration results. The idea here is if
-  // we get multiple readings in a row close to one another than we have locked
-  // onto a good set of solutions
-  static int16_t calib_idx = 0;
-  static int16_t calib_val[N_AXIS][N_COMP_SAMPS];
-  calib_val[0][calib_idx % 3] = solution[0];
-  calib_val[1][calib_idx % 3] = solution[1];
-  calib_val[2][calib_idx % 3] = solution[2];
-  calib_idx++;
+  s_calib_val[0][s_calib_idx % 3] = solution[0];
+  s_calib_val[1][s_calib_idx % 3] = solution[1];
+  s_calib_val[2][s_calib_idx % 3] = solution[2];
+  s_calib_idx++;
 
-  static int saved_sample_match = 0;
   int x_delta, y_delta, z_delta;
 
   // is the new solution close to what we already have saved?
@@ -304,31 +298,31 @@ static MagCalStatus check_correction_value(int16_t *solution,
     z_delta = ABS(saved_solution[2] - solution[2]);
     if ((x_delta < max_delta_thresh) && (y_delta < max_delta_thresh) &&
         (z_delta < max_delta_thresh)) {
-      saved_sample_match++;
-      if (saved_sample_match == 3) {
-        saved_sample_match = 0;
-        calib_idx = 0;
-        PBL_LOG_INFO("Persisting previous values!");
+      s_saved_sample_match++;
+      if (s_saved_sample_match == 3) {
+        s_saved_sample_match = 0;
+        s_calib_idx = 0;
+        PBL_LOG_DBG("Persisting previous values!");
         return (MagCalStatusSavedSampleMatch); // locked
       }
     }
   }
 
   // do we have several solutions in a row that are close to one another
-  if (calib_idx >= N_COMP_SAMPS) {
-    x_delta = min_max_diff(calib_val[0], 3);
-    y_delta = min_max_diff(calib_val[1], 3);
-    z_delta = min_max_diff(calib_val[2], 3);
+  if (s_calib_idx >= N_COMP_SAMPS) {
+    x_delta = min_max_diff(s_calib_val[0], 3);
+    y_delta = min_max_diff(s_calib_val[1], 3);
+    z_delta = min_max_diff(s_calib_val[2], 3);
     if ((x_delta < max_delta_thresh) && (y_delta < max_delta_thresh) &&
         (z_delta < max_delta_thresh)) {
-      int corrs[N_AXIS] = { 0 };
+      int corrs[N_AXIS] = {0};
       for (int i = 0; i < N_AXIS; i++) {
         for (int j = 0; j < N_COMP_SAMPS; j++) {
-          corrs[i] += calib_val[i][j];
+          corrs[i] += s_calib_val[i][j];
         }
         solution[i] = corrs[i] / N_COMP_SAMPS;
       }
-      calib_idx = 0;
+      s_calib_idx = 0;
       return (MagCalStatusNewLockedSolutionAvail);
     }
   }
@@ -337,28 +331,27 @@ static MagCalStatus check_correction_value(int16_t *solution,
 }
 
 static int s_sample_idx = 0;
-static int s_no_fit_strikes = 0;
 static int s_samples_collected_for_fit = 0;
+static int32_t s_thresh = THRESH_MAX;
 
 void ecomp_corr_reset(void) {
-    s_no_fit_strikes = 0;
-    s_samples_collected_for_fit = 0;
-    s_sample_idx = 0;
+  s_samples_collected_for_fit = 0;
+  s_sample_idx = 0;
+  s_thresh = THRESH_MAX;
+  s_calib_idx = 0;
+  s_saved_sample_match = 0;
 }
 
-MagCalStatus ecomp_corr_add_raw_mag_sample(int16_t *sample,
-    int16_t *saved_corr, int16_t *solution) {
-  static int thresh = THRESH_MAX;
+MagCalStatus ecomp_corr_add_raw_mag_sample(int16_t *sample, int16_t *saved_corr,
+                                           int16_t *solution) {
   s_samples_collected_for_fit++;
 
-  // if we haven't gotten good samples points in 15s @ 20Hz (60s @ 5Hz)
+  // no complete point set in 15s @ 20Hz (60s @ 5Hz): relax the gates so
+  // calibration stays feasible in weak fields regardless of motion pattern
   if (s_samples_collected_for_fit > 300) {
-    if (s_sample_idx >= 2) { // there was some kind of motion
-      s_no_fit_strikes++;
-    }
-    if (s_no_fit_strikes == 2) {
-      PBL_LOG_INFO("Lowering magnetometer distance threshold");
-      thresh = THRESH_MIN;
+    if (s_thresh > THRESH_MIN) {
+      s_thresh = MAX(s_thresh - THRESH_STEP, THRESH_MIN);
+      PBL_LOG_DBG("Lowering magnetometer distance threshold to %d", (int)s_thresh);
     }
 
     s_samples_collected_for_fit = 0;
@@ -370,22 +363,22 @@ MagCalStatus ecomp_corr_add_raw_mag_sample(int16_t *sample,
   s_samples[s_sample_idx][2] = sample[2];
 
   if (s_sample_idx == 1) {
-    if (!pt_to_pt_dist_under_thresh(0, 1, thresh)) {
+    if (!pt_to_pt_dist_under_thresh(0, 1, s_thresh)) {
       return (MagCalStatusNoSolution);
     }
   } else if (s_sample_idx == 2) {
-    if (!pt_to_line_dist_under_thresh(0, 1, 2, thresh)) {
+    if (!pt_to_line_dist_under_thresh(0, 1, 2, s_thresh)) {
       return (MagCalStatusNoSolution);
     }
   } else if (s_sample_idx == 3) {
-    if (!pt_to_plane_dist_under_thresh(0, 1, 2, 3, thresh)) {
+    if (!pt_to_plane_dist_under_thresh(0, 1, 2, 3, s_thresh)) {
       return (MagCalStatusNoSolution);
     }
   }
 
   // the sample has passed its distance threshold check so add it
-  PBL_LOG_DBG("---> [%d] Adding %d %d %d \n",
-      s_sample_idx, (int)sample[0], (int)sample[1], (int)sample[2]);
+  PBL_LOG_DBG("---> [%d] Adding %d %d %d \n", s_sample_idx, (int)sample[0], (int)sample[1],
+              (int)sample[2]);
   s_sample_idx++;
 
   if (s_sample_idx != 4) {

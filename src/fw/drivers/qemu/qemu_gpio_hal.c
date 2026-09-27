@@ -1,7 +1,7 @@
 /* SPDX-FileCopyrightText: 2026 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/gpio.h"
+#include <pbl/drivers/gpio.h>
 
 #include "board/board.h"
 
@@ -10,8 +10,8 @@
 #define REG32(addr) (*(volatile uint32_t *)(addr))
 
 // GPIO MMIO register offsets
-#define GPIO_STATE   0x00  // r: bit per button
-#define GPIO_OUTPUT  0x04  // w: output state bits
+#define GPIO_STATE  0x00 // r: bit per button
+#define GPIO_OUTPUT 0x04 // w: output state bits
 
 void gpio_output_init(const OutputConfig *pin_config, GPIOOType_TypeDef otype) {
   (void)pin_config;

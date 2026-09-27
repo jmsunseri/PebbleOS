@@ -3,11 +3,10 @@
 
 #pragma once
 
-#include "util/attributes.h"
+#include "pbl/kernel/compiler.h"
 #include "kernel/events.h"
 #include "pbl/services/notifications/alerts_preferences.h"
 
-#include <inttypes.h>
 #include <stdbool.h>
 
 typedef enum DoNotDisturbScheduleType {
@@ -16,7 +15,7 @@ typedef enum DoNotDisturbScheduleType {
   NumDNDSchedules,
 } DoNotDisturbScheduleType;
 
-typedef struct PACKED DoNotDisturbSchedule {
+typedef struct PBL_PACKED DoNotDisturbSchedule {
   uint8_t from_hour;
   uint8_t from_minute;
   uint8_t to_hour;
@@ -76,12 +75,10 @@ void do_not_disturb_init(void);
 
 void do_not_disturb_handle_clock_change(void);
 
+//! Handle a DND state preference (manual/smart/schedule) written via phone settings sync.
+//! Re-evaluates the DND state so the change fires the usual event and schedule timer update.
+void do_not_disturb_handle_pref_synced(void);
+
 void do_not_disturb_handle_calendar_event(PebbleCalendarEvent *e);
 
 void do_not_disturb_manual_toggle_with_dialog(void);
-
-#if UNITTEST
-#include "pbl/services/new_timer/new_timer.h"
-TimerID get_dnd_timer_id(void);
-void set_dnd_timer_id(TimerID id);
-#endif

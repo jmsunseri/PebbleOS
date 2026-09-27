@@ -4,10 +4,11 @@
 #include "board/board.h"
 
 // UART device for debug serial
-#include "drivers/uart/qemu.h"
-#include "drivers/speaker/qemu/audio.h"
-#include "drivers/backlight.h"
-#include "drivers/mic/qemu/mic_definitions.h"
+#include <pbl/drivers/uart/qemu.h>
+#include <pbl/drivers/speaker/qemu/audio.h>
+#include <pbl/drivers/backlight.h>
+#include <pbl/drivers/mic/qemu/mic_definitions.h>
+#include <pbl/drivers/hrm/stub.h>
 
 static UARTDeviceState s_dbg_uart_state = {};
 
@@ -31,6 +32,19 @@ static struct UARTDevice QEMU_UART_DEVICE = {
 };
 
 UARTDevice *const QEMU_UART = (UARTDevice *)&QEMU_UART_DEVICE;
+
+#ifdef CONFIG_BT_HCI_UART
+static UARTDeviceState s_bt_hci_uart_state = {};
+
+static struct UARTDevice BT_HCI_UART_DEVICE = {
+  .state = &s_bt_hci_uart_state,
+  .base_addr = QEMU_UART3_BASE,
+  .irqn = UART3_IRQn,
+  .irq_priority = 6,
+};
+
+UARTDevice *const BT_HCI_UART = (UARTDevice *)&BT_HCI_UART_DEVICE;
+#endif
 
 // Display device - QEMU framebuffer at DISPLAY_BASE + 0x1000
 static QemuDisplayDevice s_display = {
@@ -58,12 +72,13 @@ const BoardConfig BOARD_CONFIG = {
 };
 
 const BoardConfigButton BOARD_CONFIG_BUTTON = {
-  .buttons = {
-    [BUTTON_ID_BACK]   = { "Back",   NULL, 0, GPIO_PuPd_NOPULL, true },
-    [BUTTON_ID_UP]     = { "Up",     NULL, 1, GPIO_PuPd_UP, false },
-    [BUTTON_ID_SELECT] = { "Select", NULL, 2, GPIO_PuPd_UP, false },
-    [BUTTON_ID_DOWN]   = { "Down",   NULL, 3, GPIO_PuPd_UP, false },
-  },
+  .buttons =
+      {
+        [BUTTON_ID_BACK] = {"Back", NULL, 0, GPIO_PuPd_NOPULL, true},
+        [BUTTON_ID_UP] = {"Up", NULL, 1, GPIO_PuPd_UP, false},
+        [BUTTON_ID_SELECT] = {"Select", NULL, 2, GPIO_PuPd_UP, false},
+        [BUTTON_ID_DOWN] = {"Down", NULL, 3, GPIO_PuPd_UP, false},
+      },
   .timer = NULL,
   .timer_irqn = TIMER0_IRQn,
 };
@@ -83,11 +98,20 @@ static MicDevice MIC_DEVICE = {
   .state = &s_mic_state,
   .channels = 1,
 };
-MicDevice * const MIC = &MIC_DEVICE;
+MicDevice *const MIC = &MIC_DEVICE;
+
+static HRMDeviceState s_hrm_state;
+static HRMDevice s_hrm = {
+  .state = &s_hrm_state,
+};
+HRMDevice *const HRM = &s_hrm;
 
 // IRQ handler trampolines
 IRQ_MAP(UART2, uart_irq_handler, DBG_UART);
 IRQ_MAP(UART1, uart_irq_handler, QEMU_UART);
+#ifdef CONFIG_BT_HCI_UART
+IRQ_MAP(UART3, uart_irq_handler, BT_HCI_UART);
+#endif
 IRQ_MAP(AUDIO, qemu_audio_irq_handler, AUDIO);
 
 void board_early_init(void) {

@@ -1,18 +1,16 @@
 # SPDX-FileCopyrightText: 2024 Google LLC
 # SPDX-License-Identifier: Apache-2.0
 
-from resources.types.resource_object import ResourceObject
-from resources.types.resource_definition import ResourceDefinition
-from resources.resource_map.resource_generator import ResourceGenerator
-
-from font.fontgen import Font, MAX_GLYPHS_EXTENDED, MAX_GLYPHS
-
-from pebble_sdk_platform import pebble_platforms
-
-from threading import Lock
-
 import os
 import re
+from pathlib import Path
+from threading import Lock
+
+from font.fontgen import MAX_GLYPHS, MAX_GLYPHS_EXTENDED, Font
+from pebble_sdk_platform import pebble_platforms
+from resources.resource_map.resource_generator import ResourceGenerator
+from resources.types.resource_definition import ResourceDefinition
+from resources.types.resource_object import ResourceObject
 
 
 class FontResourceGenerator(ResourceGenerator):
@@ -75,9 +73,9 @@ class FontResourceGenerator(ResourceGenerator):
         if font_ext.lower() in (".ttf", ".otf", ".bdf"):
             font_data = cls.build_font_data(font_path, definition)
         elif font_ext.lower() == ".pbf":
-            font_data = open(font_path, "rb").read()
+            font_data = Path(font_path).read_bytes()
         else:
-            raise Exception(f"Unsupported font format: {font_ext}")
+            raise RuntimeError(f"Unsupported font format: {font_ext}")
 
         return ResourceObject(definition, font_data)
 
@@ -86,14 +84,21 @@ class FontResourceGenerator(ResourceGenerator):
         # PBL-23964: it turns out that font generation is not thread-safe with freetype
         # 2.4 (and possibly later versions). To avoid running into this, we use a lock.
         with cls.lock:
-            height = getattr(
-                definition, "pixel_height", None
-            ) or FontResourceGenerator._get_font_height_from_name(definition.name)
+            name_height = cls._get_font_height_from_name(definition.name)
+            height = getattr(definition, "pixel_height", None) or name_height
             is_legacy = definition.compatibility == "2.7"
             max_glyphs = MAX_GLYPHS_EXTENDED if definition.extended else MAX_GLYPHS
 
+            # Extended fonts sit on the base font's baseline, not their render size.
+            baseline = name_height if definition.extended else None
+
             font = Font(
-                ttf_path, height, max_glyphs, definition.max_glyph_size, is_legacy
+                ttf_path,
+                height,
+                max_glyphs,
+                definition.max_glyph_size,
+                is_legacy,
+                baseline=baseline,
             )
 
             if definition.character_regex is not None:
@@ -122,7 +127,7 @@ class FontResourceGenerator(ResourceGenerator):
 
         if match is None:
             if name != "FONT_FALLBACK" and name != "FONT_FALLBACK_INTERNAL":
-                raise ValueError("Font {0}: no height found in name\n".format(name))
+                raise ValueError(f"Font {name}: no height found in name\n")
 
             return 14
 

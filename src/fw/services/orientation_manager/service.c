@@ -5,16 +5,15 @@
 #include "pbl/services/orientation_manager.h"
 #include "system/passert.h"
 #include "shell/prefs.h"
-#include "drivers/display/display.h"
-#include "drivers/accel.h"
-#include "drivers/button.h"
-#include "drivers/imu/mmc5603nj/mmc5603nj.h"
+#include <pbl/drivers/display/display.h>
+#include <pbl/drivers/accel.h>
+#include <pbl/drivers/button.h>
+#include <pbl/drivers/imu/mmc5603nj/mmc5603nj.h>
 #include "kernel/events.h"
 #include "process_management/process_manager.h"
 #ifdef CONFIG_SERVICE_TOUCH
 #include "pbl/services/touch/touch.h"
 #endif
-
 
 void prv_change_orientation(bool rotated) {
   display_set_rotated(rotated);

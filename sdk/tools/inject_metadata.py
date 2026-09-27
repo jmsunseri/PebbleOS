@@ -3,18 +3,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-from struct import pack, unpack
-
 import os
 import os.path
 import sys
-
-from subprocess import Popen, PIPE
 from shutil import copy2
-from pbpack import ResourcePack
-
+from struct import pack, unpack
+from subprocess import PIPE, Popen
 
 import stm32_crc
+from pbpack import ResourcePack
 
 # Pebble App Metadata Struct
 # These are offsets of the PebbleProcessInfo struct in src/fw/app_management/pebble_process_info.h
@@ -46,10 +43,15 @@ PROCESS_INFO_VISIBILITY_SHOWN_ON_COMMUNICATION = 1 << 2
 PROCESS_INFO_ALLOW_JS = 1 << 3
 PROCESS_INFO_HAS_WORKER = 1 << 4
 
-# Max app size, including the struct and reloc table
+# Max app size, including the struct and reloc table. Fallback for callers that pass no limit; the
+# build passes the platform's MAX_APP_BINARY_SIZE from tools/pebble_sdk_platform.py.
 # Note that even if the app is smaller than this, it still may be too big, as it needs to share this
 # space with applib/ which changes in size from release to release.
 MAX_APP_BINARY_SIZE = 0x10000
+
+# PebbleProcessInfo.load_size and .virtual_size are uint16_t, so neither can exceed this whatever
+# the platform allows for the total. Only the reloc table, stored past load_size, can use the rest.
+MAX_PROCESS_INFO_SIZE_FIELD = 0xFFFF
 
 # This number is a rough estimate, but should not be less than the available space.
 # Currently, app_state uses up a small part of the app space.
@@ -77,11 +79,14 @@ def inject_metadata(
     timestamp,
     allow_js=False,
     has_worker=False,
+    max_binary_size=None,
 ):
+    if max_binary_size is None:
+        max_binary_size = MAX_APP_BINARY_SIZE
 
     if target_binary[-4:] != ".bin":
-        raise Exception(
-            "Invalid filename <%s>! The filename should end in .bin" % target_binary
+        raise RuntimeError(
+            f"Invalid filename <{target_binary}>! The filename should end in .bin"
         )
 
     def get_nm_output(elf_file):
@@ -110,16 +115,15 @@ def inject_metadata(
             if symbol == sym[-1] and len(sym) == 3:
                 return int(sym[0], 16)
 
-        raise Exception(
-            "Could not locate symbol <%s> in binary! Failed to inject app metadata"
-            % (symbol)
+        raise RuntimeError(
+            f"Could not locate symbol <{symbol}> in binary! Failed to inject app metadata"
         )
 
     def get_virtual_size(elf_file):
         """returns the virtual size (static memory usage, .text + .data + .bss) in bytes"""
 
         readelf_bss_process = Popen(
-            "arm-none-eabi-readelf -S '%s'" % elf_file, shell=True, stdout=PIPE
+            f"arm-none-eabi-readelf -S '{elf_file}'", shell=True, stdout=PIPE
         )
         readelf_bss_output = readelf_bss_process.communicate()[0].decode("utf8")
 
@@ -150,11 +154,7 @@ def inject_metadata(
             if len(columns) < 6:
                 continue
 
-            if columns[0] == ".bss":
-                addr = int(columns[2], 16)
-                size = int(columns[4], 16)
-                last_section_end_addr = addr + size
-            elif columns[0] == ".data" and last_section_end_addr == 0:
+            if columns[0] == ".bss" or columns[0] == ".data" and last_section_end_addr == 0:
                 addr = int(columns[2], 16)
                 size = int(columns[4], 16)
                 last_section_end_addr = addr + size
@@ -166,7 +166,7 @@ def inject_metadata(
             "Failed to parse ELF sections while calculating the virtual size\n"
         )
         sys.stderr.write(readelf_bss_output)
-        raise Exception(
+        raise RuntimeError(
             "Failed to parse ELF sections while calculating the virtual size"
         )
 
@@ -214,8 +214,7 @@ def inject_metadata(
                 section_label_idx = words.index(".got")
                 addr = int(words[section_label_idx + 2], 16)
                 length = int(words[section_label_idx + 4], 16)
-                for i in range(addr, addr + length, 4):
-                    entries.append(i)
+                entries.extend(range(addr, addr + length, 4))
                 break
 
         return entries
@@ -224,8 +223,10 @@ def inject_metadata(
 
     try:
         app_entry_address = get_symbol_addr(nm_output, ENTRY_PT_SYMBOL)
-    except:
-        raise Exception("Missing app entry point! Must be `int main(void) { ... }` ")
+    except RuntimeError as e:
+        raise RuntimeError(
+            "Missing app entry point! Must be `int main(void) { ... }` "
+        ) from e
     jump_table_address = get_symbol_addr(nm_output, JUMP_TABLE_ADDR_SYMBOL)
 
     reloc_entries = get_relocate_entries(target_elf)
@@ -245,16 +246,18 @@ def inject_metadata(
 
     with open(target_binary, "r+b") as f:
         total_app_image_size = app_load_size + (len(reloc_entries) * 4)
-        if total_app_image_size > MAX_APP_BINARY_SIZE:
-            raise Exception(
-                "App image size is %u (app %u relocation table %u). Must be smaller "
-                "than %u bytes"
-                % (
-                    total_app_image_size,
-                    app_load_size,
-                    len(reloc_entries) * 4,
-                    MAX_APP_BINARY_SIZE,
-                )
+        if total_app_image_size > max_binary_size:
+            raise RuntimeError(
+                f"App image size is {total_app_image_size:d} (app {app_load_size:d} relocation table {len(reloc_entries) * 4:d}). Must be smaller "
+                f"than {max_binary_size:d} bytes"
+            )
+
+        # Checked here so the pack() below cannot raise a bare struct.error.
+        if app_load_size > MAX_PROCESS_INFO_SIZE_FIELD:
+            raise RuntimeError(
+                f"App load size is {app_load_size:d} bytes. The loaded image must be {MAX_PROCESS_INFO_SIZE_FIELD:d} bytes or smaller, "
+                "because PebbleProcessInfo.load_size is a uint16_t. The relocation table is "
+                "stored past the loaded image and does not count towards this."
             )
 
         def read_value_at_offset(offset, format_str, size):
@@ -274,14 +277,21 @@ def inject_metadata(
 
         app_virtual_size = get_virtual_size(target_elf)
 
+        # Same uint16_t ceiling as load_size, on the .text + .data + .bss total this time.
+        if app_virtual_size > MAX_PROCESS_INFO_SIZE_FIELD:
+            raise RuntimeError(
+                f"App virtual size is {app_virtual_size:d} bytes (.text + .data + .bss). Must be {MAX_PROCESS_INFO_SIZE_FIELD:d} bytes or "
+                "smaller, because PebbleProcessInfo.virtual_size is a uint16_t."
+            )
+
         struct_changes = {
             "load_size": app_load_size,
-            "entry_point": "0x%08x" % app_entry_address,
-            "symbol_table": "0x%08x" % jump_table_address,
+            "entry_point": f"0x{app_entry_address:08x}",
+            "symbol_table": f"0x{jump_table_address:08x}",
             "flags": app_flags,
-            "crc": "0x%08x" % app_crc,
-            "num_reloc_entries": "0x%08x" % len(reloc_entries),
-            "resource_crc": "0x%08x" % resource_crc,
+            "crc": f"0x{app_crc:08x}",
+            "num_reloc_entries": f"0x{len(reloc_entries):08x}",
+            "resource_crc": f"0x{resource_crc:08x}",
             "timestamp": timestamp,
             "virtual_size": app_virtual_size,
         }
@@ -308,8 +318,7 @@ def inject_metadata(
         # Write the reloc_entries past the end of the binary. This expands the size of the binary,
         # but this new stuff won't actually be loaded into ram.
         f.seek(app_load_size)
-        for entry in reloc_entries:
-            f.write(pack("<L", entry))
+        f.writelines(pack("<L", entry) for entry in reloc_entries)
 
         f.flush()
 

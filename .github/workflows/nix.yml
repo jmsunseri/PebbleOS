@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, '*-branch']
 
 jobs:
   changes-nix:
@@ -15,13 +15,14 @@ jobs:
       should-build: ${{ steps.filter.outputs.src == 'true' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
             src:
+              - '.github/actions/**'
               - '.github/workflows/nix.yml'
               - 'flake.nix'
               - 'flake.lock'
@@ -39,9 +40,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          submodules: true
+
+      - name: Rebase onto target branch
+        uses: ./.github/actions/rebase
+        with:
           submodules: true
 
       - name: Install Nix
@@ -62,10 +68,10 @@ jobs:
           '
 
       - name: Configure
-        run: nix develop --command ./waf configure --board asterix
+        run: nix develop --command pbl configure --board asterix
 
       - name: Build
-        run: nix develop --command ./waf build
+        run: nix develop --command pbl build
 
   nix-status:
     needs: [changes-nix, nix-shell]

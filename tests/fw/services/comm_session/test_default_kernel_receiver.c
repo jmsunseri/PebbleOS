@@ -44,7 +44,7 @@ typedef enum {
   NumHandlers
 } FakeProtocolHandlers;
 
-static int s_handler_call_count[NumHandlers] = { 0 };
+static int s_handler_call_count[NumHandlers] = {0};
 
 typedef struct {
   size_t len;
@@ -79,8 +79,7 @@ static void prv_assert_no_handler_calls(void) {
   }
 }
 
-static void prv_endpoint_handler_a(
-    CommSession *session, const uint8_t *data, size_t length) {
+static void prv_endpoint_handler_a(CommSession *session, const uint8_t *data, size_t length) {
   s_handler_call_count[HandlerA]++;
   if (s_recorded_count < MAX_RECORDED_CALLS) {
     s_recorded_data[s_recorded_count] = data[0];
@@ -90,27 +89,27 @@ static void prv_endpoint_handler_a(
   prv_assert_data_matches_expected(data, length);
 }
 
-static void prv_endpoint_handler_b(
-    CommSession *session, const uint8_t *data, size_t length) {
+static void prv_endpoint_handler_b(CommSession *session, const uint8_t *data, size_t length) {
   s_handler_call_count[HandlerB]++;
   prv_assert_data_matches_expected(data, length);
 }
 
-static void prv_endpoint_handler_c(
-    CommSession *session, const uint8_t *data, size_t length) {
+static void prv_endpoint_handler_c(CommSession *session, const uint8_t *data, size_t length) {
   s_handler_call_count[HandlerC]++;
   prv_assert_data_matches_expected(data, length);
 }
 
 static const PebbleProtocolEndpoint s_endpoints[NumHandlers] = {
-  [0] = {
-    .handler = prv_endpoint_handler_a,
-    .receiver_opt = &g_default_kernel_receiver_opt_bg,
-  },
-  [1] = {
-    .handler = prv_endpoint_handler_b,
-    .receiver_opt = &g_default_kernel_receiver_opt_bg,
-  },
+  [0] =
+      {
+        .handler = prv_endpoint_handler_a,
+        .receiver_opt = &g_default_kernel_receiver_opt_bg,
+      },
+  [1] =
+      {
+        .handler = prv_endpoint_handler_b,
+        .receiver_opt = &g_default_kernel_receiver_opt_bg,
+      },
   [2] = {
     .handler = prv_endpoint_handler_c,
     .receiver_opt = &g_default_kernel_receiver_opt_main,
@@ -126,7 +125,6 @@ void test_default_kernel_receiver__cleanup(void) {
   s_skip_data_assert = false;
   s_recorded_count = 0;
 }
-
 
 //! With one event in flight, walk through the prepare, write, finish happy
 //! path.  Ensure that the endpoint handler CB is run from kernel BG and that
@@ -161,20 +159,15 @@ void test_default_kernel_receiver__prepare_write_finish_multiple_sessions(void) 
     (CommSession *)3,
   };
 
-  char *data[NumHandlers] = {
-    "Session 1 Data!!",
-    "This is Session 2 Data!",
-    "Session 3"
-  };
+  char *data[NumHandlers] = {"Session 1 Data!!", "This is Session 2 Data!", "Session 3"};
 
   for (int i = 0; i < NumHandlers; i++) {
-    receiver[i] = g_default_kernel_receiver_implementation.prepare(
-      session[i], &s_endpoints[i], strlen(data[i]));
+    receiver[i] = g_default_kernel_receiver_implementation.prepare(session[i], &s_endpoints[i],
+                                                                   strlen(data[i]));
     cl_assert(receiver[i] != NULL);
 
     for (int j = 0; j < strlen(data[i]); j++) {
-      g_default_kernel_receiver_implementation.write(
-          receiver[i], (uint8_t *)&data[i][j], 1);
+      g_default_kernel_receiver_implementation.write(receiver[i], (uint8_t *)&data[i][j], 1);
     }
   }
 
@@ -202,18 +195,17 @@ void test_default_kernel_receiver__prepare_write_finish_multiple_sessions(void) 
 
 //! It's possible the same session can receiver multiple messages before any
 //! are processed on kernel BG. Make sure they do not interfere with one
-//! another. With coalesced callbacks, a single system_task callback drains
-//! all pending messages in order.
+//! another. Coalesced messages are drained one-per-callback (chained) and
+//! delivered in arrival order.
 void test_default_kernel_receiver__same_session_batched(void) {
   const int batch_num = 10;
   char data = 'a';
   for (int i = 0; i < batch_num; i++) {
-    Receiver *receiver = g_default_kernel_receiver_implementation.prepare(
-        FAKE_COMM_SESSION, &s_endpoints[0], 1);
+    Receiver *receiver =
+        g_default_kernel_receiver_implementation.prepare(FAKE_COMM_SESSION, &s_endpoints[0], 1);
     cl_assert(receiver != NULL);
 
-    g_default_kernel_receiver_implementation.write(
-        receiver, (uint8_t *)&data, 1);
+    g_default_kernel_receiver_implementation.write(receiver, (uint8_t *)&data, 1);
 
     g_default_kernel_receiver_implementation.finish(receiver);
 
@@ -222,8 +214,8 @@ void test_default_kernel_receiver__same_session_batched(void) {
 
   prv_assert_no_handler_calls();
 
-  // All 10 messages are coalesced into a single system_task callback.
-  // Skip per-handler expected_data assertion; verify order via recording.
+  // One message per callback, but invoke_pending() loops over the reschedules,
+  // so all 10 are delivered. Verify order via recording.
   s_skip_data_assert = true;
   fake_system_task_callbacks_invoke_pending();
   cl_assert_equal_i(s_handler_call_count[HandlerA], batch_num);
@@ -238,6 +230,38 @@ void test_default_kernel_receiver__same_session_batched(void) {
   cl_assert_equal_i(fake_pbl_malloc_num_net_allocs(), 0);
 }
 
+//! A coalesced batch must drain one message per callback so a slow handler
+//! can't starve the watchdog. Verify each callback handles exactly one.
+void test_default_kernel_receiver__batch_drains_one_per_callback(void) {
+  const int batch_num = 5;
+  char data = 'a';
+  for (int i = 0; i < batch_num; i++) {
+    Receiver *receiver =
+        g_default_kernel_receiver_implementation.prepare(FAKE_COMM_SESSION, &s_endpoints[0], 1);
+    cl_assert(receiver != NULL);
+    g_default_kernel_receiver_implementation.write(receiver, (uint8_t *)&data, 1);
+    g_default_kernel_receiver_implementation.finish(receiver);
+    data += 1;
+  }
+
+  prv_assert_no_handler_calls();
+  s_skip_data_assert = true;
+
+  // The flood coalesces into a single pending callback.
+  cl_assert_equal_i(fake_system_task_count_callbacks(), 1);
+
+  // Each invocation runs one handler and chains the next callback.
+  for (int i = 0; i < batch_num; i++) {
+    cl_assert_equal_i(s_handler_call_count[HandlerA], i);
+    fake_system_task_callbacks_invoke(1);
+    cl_assert_equal_i(s_handler_call_count[HandlerA], i + 1);
+  }
+
+  // Nothing left to do once the batch is drained.
+  cl_assert_equal_i(fake_system_task_count_callbacks(), 0);
+  cl_assert_equal_i(fake_pbl_malloc_num_net_allocs(), 0);
+}
+
 //! Make sure that if cleanup runs and we are partially through updating a
 //! buffer the callback does not get called
 void test_default_kernel_receiver__receiver_cleanup(void) {
@@ -249,7 +273,6 @@ void test_default_kernel_receiver__receiver_cleanup(void) {
 
   g_default_kernel_receiver_implementation.write(receiver, (uint8_t *)data, strlen(data));
   prv_assert_no_handler_calls();
-
 
   g_default_kernel_receiver_implementation.cleanup(receiver);
 

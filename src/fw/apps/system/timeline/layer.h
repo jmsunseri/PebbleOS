@@ -10,8 +10,6 @@
 #include "applib/ui/animation.h"
 #include "applib/ui/layer.h"
 #include "pbl/services/evented_timer.h"
-#include "pbl/services/blob_db/pin_db.h"
-#include "pbl/services/timeline/item.h"
 #include "pbl/services/timeline/timeline_layout.h"
 #include "pbl/services/timeline/timeline_layout_animations.h"
 
@@ -21,8 +19,7 @@
 
 #define TIMELINE_LAYER_FIRST_VISIBLE_LAYOUT 1
 
-#define TIMELINE_LAYER_TEXT_ALIGNMENT \
-    PBL_IF_RECT_ELSE(GTextAlignmentLeft, GTextAlignmentRight)
+#define TIMELINE_LAYER_TEXT_ALIGNMENT PBL_IF_RECT_ELSE(GTextAlignmentLeft, GTextAlignmentRight)
 #define TIMELINE_LAYER_TEXT_VERTICAL_ALIGNMENT GVerticalAlignmentTop
 
 #define TIMELINE_LAYER_SLIDE_MS (150)
@@ -120,7 +117,7 @@ void timeline_layer_init(TimelineLayer *layer, const GRect *frame,
 void timeline_layer_set_sidebar_color(TimelineLayer *timeline_layer, GColor color);
 
 //! Sets the sidebar width
-//! @param layer Pointer to the TimelineLayer.
+//! @param timeline_layer Pointer to the TimelineLayer.
 //! @param width Width to set the TimelineLayer sidebar to.
 void timeline_layer_set_sidebar_width(TimelineLayer *timeline_layer, int16_t width);
 

@@ -10,7 +10,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-
 typedef void (*AccelDataReadyCallback)(void *context);
 
 typedef struct AccelManagerState AccelManagerState;
@@ -18,7 +17,6 @@ typedef struct AccelManagerState AccelManagerState;
 //! Returns the maximum number of samples that can be batched per update, i.e.
 //! the depth of the accelerometer's hardware FIFO.
 uint32_t sys_accel_manager_get_max_samples_per_update(void);
-
 
 void accel_manager_init(void);
 void accel_manager_enable(bool on);
@@ -41,9 +39,9 @@ int sys_accel_manager_peek(AccelData *accel_data);
 //!
 //! @return An AccelManagerState object that has been allocated on the kernel heap. You must call
 //!         sys_accel_manager_data_unsubscribe to free this object when you're done.
-AccelManagerState* sys_accel_manager_data_subscribe(
-    AccelSamplingRate rate, AccelDataReadyCallback data_cb, void* context,
-    PebbleTask handler_task);
+AccelManagerState *sys_accel_manager_data_subscribe(AccelSamplingRate rate,
+                                                    AccelDataReadyCallback data_cb, void *context,
+                                                    PebbleTask handler_task);
 
 //! @return true if an unprocessed data event is outstanding
 bool sys_accel_manager_data_unsubscribe(AccelManagerState *state);
@@ -55,7 +53,8 @@ int sys_accel_manager_set_sampling_rate(AccelManagerState *state, AccelSamplingR
 //! Reconfigure an existing subscription to use a sampling rate that's the lowest the hardware
 //! can support without introducing jitter and is at least min_rate_hz.
 //!
-//! @param min_rate_hz The lowest desired sample rate in millihertz.
+//! @param state The subscription to reconfigure.
+//! @param min_rate_mHz The lowest desired sample rate in millihertz.
 //! @return The resulting sample rate in millihertz. 0 if it's not possible to get a rate high
 //!         enough.
 uint32_t accel_manager_set_jitterfree_sampling_rate(AccelManagerState *state,

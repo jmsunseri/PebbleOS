@@ -1,16 +1,13 @@
 /* SPDX-FileCopyrightText: 2025 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/watchdog.h"
+#include <pbl/drivers/watchdog.h>
 
-#include "util/bitset.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
 #include <nrfx.h>
 #include <helpers/nrfx_reset_reason.h>
 #include <hal/nrf_wdt.h>
-
-#include <inttypes.h>
 
 void watchdog_init(void) {
   nrf_wdt_reload_request_enable(NRF_WDT, NRF_WDT_RR0);

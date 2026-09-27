@@ -1,9 +1,9 @@
 /* SPDX-FileCopyrightText: 2026 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/vibe.h"
+#include <pbl/drivers/vibe.h>
 
-#include "drivers/qemu/qemu_serial.h"
+#include <pbl/drivers/qemu/qemu_serial.h>
 #include "console/prompt.h"
 
 #include <stdlib.h>
@@ -28,9 +28,7 @@ void vibe_ctl(bool on) {
   QemuProtocolVibrationNotificationHeader notification = {
     .on = on ? 1 : 0,
   };
-  qemu_serial_send(QemuProtocol_Vibration,
-                   (const uint8_t *)&notification,
-                   sizeof(notification));
+  qemu_serial_send(QemuProtocol_Vibration, (const uint8_t *)&notification, sizeof(notification));
 }
 
 void vibe_force_off(void) {

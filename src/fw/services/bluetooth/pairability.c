@@ -1,7 +1,7 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include "comm/ble/gap_le_slave_discovery.h"
@@ -13,7 +13,7 @@
 #include "pbl/services/regular_timer.h"
 #include "pbl/services/system_task.h"
 
-#include <bluetooth/pairability.h>
+#include <pbl/bluetooth/pairability.h>
 
 PBL_LOG_MODULE_DECLARE(service_bluetooth, CONFIG_SERVICE_BLUETOOTH_LOG_LEVEL);
 
@@ -37,7 +37,7 @@ static void evaluate_pairing_refcount(void *data) {
 
   bool is_ble_pairable_and_discoverable = (s_allow_ble_pairing_refcount > 0);
 
-  bt_driver_le_pairability_set_enabled(is_ble_pairable_and_discoverable);
+  pbl_bt_le_pairability_set_enabled(is_ble_pairable_and_discoverable);
   if (s_last_ble_discoverable_state != is_ble_pairable_and_discoverable) {
     if (is_ble_pairable_and_discoverable) {
       bt_local_addr_pause_cycling();

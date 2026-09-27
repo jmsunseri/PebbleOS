@@ -5,31 +5,28 @@
 
 #include "applib/ui/app_window_click_glue.h"
 #include "applib/ui/click_internal.h"
+#include "applib/ui/recognizer/recognizer_list.h"
+#include "applib/ui/recognizer/recognizer_manager.h"
+#include "applib/ui/recognizer/touch_nav.h"
+#include "applib/touch_service.h"
+#include "applib/touch_service_private.h"
 #include "applib/ui/window.h"
 #include "applib/ui/window_private.h"
 #include "applib/ui/window_stack.h"
 #include "applib/ui/window_stack_animation.h"
 #include "applib/ui/window_stack_private.h"
-#include "applib/graphics/graphics.h"
-#include "applib/graphics/graphics_private.h"
 #include "console/prompt.h"
-#include "kernel/panic.h"
 #include "kernel/events.h"
 #include "kernel/event_loop.h"
 #include "kernel/pbl_malloc.h"
 #include "process_state/app_state/app_state.h"
 #include "pbl/services/compositor/compositor_transitions.h"
-#include "pbl/services/new_timer/new_timer.h"
-#include "pbl/services/powermode_service.h"
 #include "shell/normal/app_idle_timeout.h"
 #include "shell/normal/watchface.h"
 #include "system/passert.h"
 #include "system/profiler.h"
-#include "util/list.h"
-#include "util/size.h"
 
-#include "FreeRTOS.h"
-#include "semphr.h"
+#include "pbl/kernel/sem.h"
 
 typedef struct ModalContext {
   WindowStack window_stack;
@@ -48,6 +45,13 @@ static ModalContext s_modal_window_stacks[NumModalPriorities];
 
 static ClickManager s_modal_window_click_manager;
 
+#ifdef CONFIG_TOUCH
+// Kernel twin of the per-task touch-nav bridge state (the app twin lives in AppState).
+static RecognizerList s_modal_recognizer_list;
+static RecognizerManager s_modal_recognizer_manager;
+static TouchNavState s_modal_touch_nav_state;
+#endif
+
 static ModalPriority s_modal_min_priority = ModalPriorityMin;
 
 // Used to help us keep track various modal properties in aggregate, such as existence.
@@ -56,13 +60,6 @@ static ModalProperty s_current_modal_properties = ModalPropertyDefault;
 
 // Used to decide the compositor transition after a modal is already removed from the stack
 static ModalPriority s_last_highest_modal_priority = ModalPriorityInvalid;
-
-#if !defined(CONFIG_RECOVERY_FW)
-static bool s_powermode_hp_requested;
-static TimerID s_powermode_release_timer;
-
-#define POWERMODE_MODAL_RELEASE_DELAY_MS 5000
-#endif
 
 // Private API
 ////////////////////
@@ -108,6 +105,109 @@ static void prv_send_will_focus_event(bool in_focus) {
   event_put(&event);
 }
 
+#ifdef CONFIG_TOUCH
+static Window *prv_get_visible_focused_window(void);
+
+// Touch-nav bridge effects for the kernel (modal) task.
+static bool prv_modal_touch_nav_is_animating(void *ctx) {
+  Window *window = prv_get_visible_focused_window();
+  return window && window_stack_is_animating(window->parent_window_stack);
+}
+
+static bool prv_modal_touch_nav_top_overrides_back(void *ctx) {
+  Window *window = prv_get_visible_focused_window();
+  return window && window->overrides_back_button;
+}
+
+static bool prv_modal_touch_nav_top_tap_requires_action_bar(void *ctx) {
+  Window *window = prv_get_visible_focused_window();
+  return window && window->touch_tap_requires_action_bar;
+}
+
+static bool prv_modal_touch_nav_top_bridge_disabled(void *ctx) {
+  Window *window = prv_get_visible_focused_window();
+  // No focused modal window: keep the modal twin inert. The button path is
+  // likewise gated on a focused modal (and asserts a window), so report
+  // bridge-disabled here -> route resolves to None -> the whole set fails and
+  // nothing is emitted, instead of emitting into an unowned modal click manager.
+  if (!window) {
+    return true;
+  }
+  return window->touch_bridge_disabled;
+}
+
+static void prv_modal_touch_nav_pop_top(void *ctx) {
+  Window *window = prv_get_visible_focused_window();
+  if (window) {
+    window_stack_remove(window, true /* animated */);
+  }
+}
+
+static void prv_modal_touch_nav_emit_button(void *ctx, ButtonId button) {
+  ClickManager *cm = modal_manager_get_click_manager();
+  click_recognizer_handle_button_down(&cm->recognizers[button]);
+  click_recognizer_handle_button_up(&cm->recognizers[button]);
+}
+
+static void prv_modal_touch_nav_idle_refresh(void *ctx) {
+  app_idle_timeout_refresh();
+}
+
+static const TouchNavOps s_modal_touch_nav_ops = {
+  .is_animating = prv_modal_touch_nav_is_animating,
+  .top_overrides_back = prv_modal_touch_nav_top_overrides_back,
+  .top_tap_requires_action_bar = prv_modal_touch_nav_top_tap_requires_action_bar,
+  .top_bridge_disabled = prv_modal_touch_nav_top_bridge_disabled,
+  .pop_top = prv_modal_touch_nav_pop_top,
+  .emit_button = prv_modal_touch_nav_emit_button,
+  .idle_refresh = prv_modal_touch_nav_idle_refresh,
+};
+
+RecognizerManager *modal_manager_get_recognizer_manager(void) {
+  return &s_modal_recognizer_manager;
+}
+
+TouchNavState *modal_manager_get_touch_nav_state(void) {
+  return &s_modal_touch_nav_state;
+}
+
+// The focused-modal predicate: enabled and at least one focusable modal on top. This is the same
+// predicate the button path uses in the kernel event loop to decide whether to route input to the
+// modal twin instead of the app.
+static bool prv_modal_is_focused(void) {
+  return modal_manager_get_enabled() && !(modal_manager_get_properties() & ModalProperty_Unfocused);
+}
+
+// Point the kernel recognizer manager at \a window (NULL to unbind), dropping any in-flight
+// gesture. Mirrors window_became_input_focus / window_lost_input_focus for the app manager. Used
+// for the cross-stack modal focus changes that bypass the per-stack window transitions.
+static void prv_modal_recognizer_focus(Window *window) {
+  recognizer_manager_cancel_and_reset(&s_modal_recognizer_manager);
+  recognizer_manager_set_window(&s_modal_recognizer_manager, window);
+}
+
+// Kernel touch-slot handler. Gate the nav pipeline on a focused modal: without one the app twin
+// owns the gesture, and running the kernel manager too would double every counter/action for a
+// single gesture (an unfocusable modal such as Timeline Peek never passes this gate either).
+static void prv_modal_touch_nav_dispatch(const TouchEvent *touch_event, void *context) {
+  if (!prv_modal_is_focused()) {
+    return;
+  }
+  touch_nav_dispatch(touch_event, context);
+}
+
+void modal_touch_nav_subscribe(void) {
+  // Runs on KernelMain. touch_service_set_system_handler routes the kernel touch slot to the gated
+  // nav dispatcher for the modal twin.
+  touch_service_set_system_handler(prv_modal_touch_nav_dispatch, &s_modal_touch_nav_state);
+}
+
+void modal_touch_nav_unsubscribe(void) {
+  recognizer_manager_cancel_and_reset(&s_modal_recognizer_manager);
+  touch_service_set_system_handler(NULL, NULL);
+}
+#endif
+
 // Public API
 ////////////////////
 void modal_manager_init(void) {
@@ -117,8 +217,12 @@ void modal_manager_init(void) {
 
   click_manager_init(&s_modal_window_click_manager);
 
-#if !defined(CONFIG_RECOVERY_FW)
-  s_powermode_release_timer = new_timer_create();
+#ifdef CONFIG_TOUCH
+  recognizer_list_init(&s_modal_recognizer_list);
+  recognizer_manager_init(&s_modal_recognizer_manager);
+  s_modal_recognizer_manager.global_list = &s_modal_recognizer_list;
+  touch_nav_state_init(&s_modal_touch_nav_state, &s_modal_recognizer_manager,
+                       &s_modal_touch_nav_ops);
 #endif
 }
 
@@ -167,8 +271,7 @@ Window *modal_manager_get_top_window(void) {
 static void prv_pop_stacks_in_range(ModalPriority low, ModalPriority high) {
   // Discreet modals are transparent and unfocusable, they are not meant to be popped when
   // requesting opaque focusable modals to pop.
-  for (ModalPriority priority = MAX(low, ModalPriorityDiscreet + 1); priority <= high;
-       priority++) {
+  for (ModalPriority priority = MAX(low, ModalPriorityDiscreet + 1); priority <= high; priority++) {
     ModalContext *m_context = &s_modal_window_stacks[priority];
     window_stack_pop_all(&m_context->window_stack, true /* animated */);
   }
@@ -192,35 +295,6 @@ static const CompositorTransition *prv_get_compositor_transition(bool modal_is_d
     is_top_discreet = (s_last_highest_modal_priority == ModalPriorityDiscreet);
   }
   return is_top_discreet ? NULL : compositor_modal_transition_to_modal_get(modal_is_destination);
-}
-
-#if !defined(CONFIG_RECOVERY_FW)
-static void prv_powermode_release_cb(void *data) {
-  (void)data;
-  if (s_powermode_hp_requested) {
-    powermode_service_release_hp();
-    s_powermode_hp_requested = false;
-  }
-}
-#endif
-
-static void prv_handle_app_to_modal_transition_powermode(void) {
-#if !defined(CONFIG_RECOVERY_FW)
-  new_timer_stop(s_powermode_release_timer);
-  if (!s_powermode_hp_requested) {
-    powermode_service_request_hp();
-    s_powermode_hp_requested = true;
-  }
-#endif
-}
-
-static void prv_handle_modal_to_app_transition_powermode(void) {
-#if !defined(CONFIG_RECOVERY_FW)
-  if (s_powermode_hp_requested) {
-    new_timer_start(s_powermode_release_timer, POWERMODE_MODAL_RELEASE_DELAY_MS,
-                    prv_powermode_release_cb, NULL, 0);
-  }
-#endif
 }
 
 static void prv_handle_app_to_modal_transition_visible(void) {
@@ -259,6 +333,12 @@ static void prv_handle_modal_to_app_transition_focus(void) {
   // There are no more modal windows, so we need to cleanup the modal window state.
   click_manager_clear(modal_manager_get_click_manager());
 
+#ifdef CONFIG_TOUCH
+  // The last focusable modal is gone; unbind the kernel recognizer manager so no gesture state or
+  // active window survives into the app-focused period.
+  prv_modal_recognizer_focus(NULL);
+#endif
+
   prv_send_will_focus_event(true /* in_focus */);
 }
 
@@ -277,11 +357,9 @@ void modal_manager_event_loop_upkeep(void) {
   if (!was_modal_transitionable && is_modal_transitionable) {
     // We now have a window visible when we didn't have one before, start the transition.
     prv_handle_app_to_modal_transition_visible();
-    prv_handle_app_to_modal_transition_powermode();
   } else if (was_modal_transitionable && !is_modal_transitionable) {
     // This event resulted in our last visible modal window being popped, let's transition away.
     prv_handle_modal_to_app_transition_visible();
-    prv_handle_modal_to_app_transition_powermode();
   }
 
   const bool is_modal_unfocused = (update.properties & ModalProperty_Unfocused);
@@ -386,9 +464,20 @@ static bool prv_update_modal_stack_callback(ModalContext *modal, IterContext *it
   if (!window->is_click_configured && is_focused) {
     // Input is now exposed by a higher priority modal window stack emptying out, gain input
     window_setup_click_config_provider(window);
+#ifdef CONFIG_TOUCH
+    // Migrate the kernel recognizer manager onto the newly focused modal. A modal-over-modal focus
+    // change happens across priority stacks and bypasses the per-stack window transitions, so this
+    // is where the manager follows the focus.
+    prv_modal_recognizer_focus(window);
+#endif
   } else if (window->is_click_configured && !is_focused) {
     // A different modal window now has focus
     window->is_click_configured = false;
+#ifdef CONFIG_TOUCH
+    // This modal just lost focus to a higher priority one; unbind the kernel manager so its active
+    // layer and any in-flight gesture do not leak into the newly focused modal.
+    prv_modal_recognizer_focus(NULL);
+#endif
   }
 
   // Set the last highest visible modal priority
@@ -433,8 +522,7 @@ static bool prv_render_modal_stack_callback(ModalContext *modal, IterContext *it
   WindowStack *stack = &modal->window_stack;
   Window *window = iter->current_top_window;
 
-  if (window_stack_is_animating(stack) &&
-      stack->transition_context.implementation &&
+  if (window_stack_is_animating(stack) && stack->transition_context.implementation &&
       stack->transition_context.implementation->render) {
     // a lot of safety guards to make sure the transition can do render by its own
     WindowTransitioningContext *const transition_context = &stack->transition_context;
@@ -453,7 +541,6 @@ static void prv_update_modal_stacks(UpdateContext *context) {
   context->properties = ModalPropertyDefault;
   prv_each_modal_stack(prv_update_modal_stack_callback, context);
 }
-
 
 ModalProperty modal_manager_get_properties(void) {
   return modal_manager_get_enabled() ? s_current_modal_properties : ModalPropertyDefault;
@@ -480,7 +567,7 @@ static bool prv_is_window_visible_callback(ModalContext *modal, IterContext *ite
 }
 
 bool modal_manager_is_window_visible(Window *window) {
-  VisibleContext context = { .window = window };
+  VisibleContext context = {.window = window};
   prv_each_modal_stack(prv_is_window_visible_callback, &context);
   return context.visible;
 }
@@ -492,13 +579,13 @@ typedef struct FocusedContext {
 
 static bool prv_is_window_focused_callback(ModalContext *modal, IterContext *iter, void *data) {
   FocusedContext *ctx = data;
-  ctx->focused = ((iter->current_top_window == ctx->window) &&
-                  (iter->current_idx == iter->first_focus_idx));
+  ctx->focused =
+      ((iter->current_top_window == ctx->window) && (iter->current_idx == iter->first_focus_idx));
   return !ctx->focused;
 }
 
 bool modal_manager_is_window_focused(Window *window) {
-  FocusedContext context = { .window = window };
+  FocusedContext context = {.window = window};
   prv_each_modal_stack(prv_is_window_focused_callback, &context);
   return context.focused;
 }
@@ -546,7 +633,7 @@ void modal_window_push(Window *window, ModalPriority priority, bool animated) {
 ////////////////////////////
 
 typedef struct WindowStackInfoContext {
-  SemaphoreHandle_t interlock;
+  struct pbl_sem interlock;
   WindowStackDump *dumps[NumModalPriorities];
   size_t counts[NumModalPriorities];
   bool disabled;
@@ -555,47 +642,37 @@ typedef struct WindowStackInfoContext {
 static void prv_modal_window_stack_info_cb(void *ctx) {
   WindowStackInfoContext *info = ctx;
   if (modal_manager_get_enabled()) {
-    for (ModalPriority priority = 0;
-         priority < NumModalPriorities;
-         ++priority) {
+    for (ModalPriority priority = 0; priority < NumModalPriorities; ++priority) {
       WindowStack *window_stack = modal_manager_get_window_stack(priority);
-      info->counts[priority] = window_stack_dump(window_stack,
-                                                 &info->dumps[priority]);
+      info->counts[priority] = window_stack_dump(window_stack, &info->dumps[priority]);
     }
   } else {
     info->disabled = true;
   }
-  xSemaphoreGive(info->interlock);
+  pbl_sem_give(&info->interlock);
 }
 
 void command_modal_stack_info(void) {
-  WindowStackInfoContext info = {
-    .interlock = xSemaphoreCreateBinary(),
-  };
-  if (!info.interlock) {
-    prompt_send_response("Couldn't allocate semaphore for modal stack");
-    return;
-  }
+  WindowStackInfoContext info = {0};
+  pbl_sem_init(&info.interlock, 0, 1);
 
   launcher_task_add_callback(prv_modal_window_stack_info_cb, &info);
-  xSemaphoreTake(info.interlock, portMAX_DELAY);
-  vSemaphoreDelete(info.interlock);
+  pbl_sem_take(&info.interlock, PBL_FOREVER);
+  pbl_sem_deinit(&info.interlock);
 
   prompt_send_response("Modal Stack, top to bottom:");
 
   char buffer[128];
-  for (ModalPriority priority = NumModalPriorities - 1;
-       priority > ModalPriorityInvalid;
+  for (ModalPriority priority = NumModalPriorities - 1; priority > ModalPriorityInvalid;
        --priority) {
-    prompt_send_response_fmt(buffer, sizeof(buffer), "Priority: %d (%zu)",
-                             priority, info.counts[priority]);
+    prompt_send_response_fmt(buffer, sizeof(buffer), "Priority: %d (%zu)", priority,
+                             info.counts[priority]);
     if (info.counts[priority] > 0 && !info.dumps[priority]) {
       prompt_send_response("Couldn't allocate buffers for modal stack data");
     } else {
       for (size_t i = 0; i < info.counts[priority]; ++i) {
         prompt_send_response_fmt(buffer, sizeof(buffer), "window %p <%s>",
-                                 info.dumps[priority][i].addr,
-                                 info.dumps[priority][i].name);
+                                 info.dumps[priority][i].addr, info.dumps[priority][i].name);
       }
     }
     kernel_free(info.dumps[priority]);

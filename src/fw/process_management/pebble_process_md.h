@@ -6,11 +6,11 @@
 #include "applib/platform.h"
 #include "kernel/pebble_tasks.h"
 #include "resource/resource.h"
-#include "util/build_id.h"
+#include "pbl/util/build_id.h"
 
 #include "pebble_process_info.h"
 
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 
 #include <stdbool.h>
 
@@ -48,15 +48,16 @@ typedef enum {
   ProcessAppSDKType_4x
 } ProcessAppSDKType;
 
-//! This structure is used internally to describe the process. This struct here is actually a polymorphic base
-//! class, and can be casted to either \ref PebbleProcessMdSystem or \ref PebbleProcessMdFlash depending on the value
-//! of \ref is_flash_based. Clients shouldn't do this casting themselves though, and instead should use the
-//! process_metadata_get_* functions to safely retreive values from this struct.
+//! This structure is used internally to describe the process. This struct here is actually a
+//! polymorphic base class, and can be casted to either \ref PebbleProcessMdSystem or \ref
+//! PebbleProcessMdFlash depending on the value of @c process_storage. Clients shouldn't do this
+//! casting themselves though, and instead should use the process_metadata_get_* functions to safely
+//! retrieve values from this struct.
 typedef struct PebbleProcessMd {
   Uuid uuid;
 
-  //! The address of the main function of the process. This will be inside the firmware for firmware processes and
-  //! will be inside the process's RAM region for 3rd party processes.
+  //! The address of the main function of the process. This will be inside the firmware for firmware
+  //! processes and will be inside the process's RAM region for 3rd party processes.
   PebbleMain main_func;
 
   //! The type of process
@@ -91,12 +92,13 @@ typedef struct PebbleProcessMd {
 typedef struct PebbleProcessMdSystem {
   PebbleProcessMd common;
 
-  const char* name;
+  const char *name;
 
   uint32_t icon_resource_id;
 
-  //! The level at which the process runs. Any processes that try to start but they have a lower level than what's
-  //! set using the \ref app_manager_set_minimum_run_level() function will not be launched.
+  //! The level at which the process runs. Any processes that try to start but they have a lower
+  //! level than what's set using the \ref app_manager_set_minimum_run_level() function will not be
+  //! launched.
   ProcessAppRunLevel run_level;
 } PebbleProcessMdSystem;
 
@@ -117,7 +119,7 @@ typedef struct PebbleProcessMdFlash {
   Version sdk_version;
 
   //! The bank this process will get it's code and data from. This field is only valid if the
-  //! \ref process_storage is ProcessStorageFlash
+  //! @c process_storage is ProcessStorageFlash
   uint32_t code_bank_num;
 
   //! The bank this app will get its resources from
@@ -130,7 +132,6 @@ typedef struct PebbleProcessMdFlash {
   uint8_t build_id[BUILD_ID_EXPECTED_LEN];
 } PebbleProcessMdFlash;
 
-
 //! Metadata for processes that are dynamically loaded from a system resource.
 typedef struct {
   PebbleProcessMd common;
@@ -138,7 +139,7 @@ typedef struct {
   char name[PROCESS_NAME_BYTES];
 
   //! Size in bytes of the app region that is occupied when this app is loaded
-  //! Used when sizing the app heap. 
+  //! Used when sizing the app heap.
   uint16_t size_bytes;
 
   //! The resource number of the app binary
@@ -146,8 +147,7 @@ typedef struct {
 
 } PebbleProcessMdResource;
 
-
-const char* process_metadata_get_name(const PebbleProcessMd *md);
+const char *process_metadata_get_name(const PebbleProcessMd *md);
 uint32_t process_metadata_get_size_bytes(const PebbleProcessMd *md);
 Version process_metadata_get_process_version(const PebbleProcessMd *md);
 Version process_metadata_get_sdk_version(const PebbleProcessMd *md);
@@ -158,13 +158,22 @@ ResourceVersion process_metadata_get_res_version(const PebbleProcessMd *md);
 const uint8_t *process_metadata_get_build_id(const PebbleProcessMd *md);
 
 //! @param[out] md
+//! @param flash_header The process info header read from flash
+//! @param process_bank_num The flash bank the process binary is stored in
+//! @param task The task the process will run as
+//! @param build_id_buffer Optional buffer holding the build id to copy, may be NULL
 void process_metadata_init_with_flash_header(PebbleProcessMdFlash *md,
-    const PebbleProcessInfo *flash_header, int process_bank_num, PebbleTask task,
-    uint8_t *build_id_buffer);
+                                             const PebbleProcessInfo *flash_header,
+                                             int process_bank_num, PebbleTask task,
+                                             uint8_t *build_id_buffer);
 
 //! @param[out] md
+//! @param info The process info header
+//! @param bin_resource_id The resource id of the process binary
+//! @param task The task the process will run as
 void process_metadata_init_with_resource_header(PebbleProcessMdResource *md,
-    const PebbleProcessInfo *info, int bin_resource_id, PebbleTask task);
+                                                const PebbleProcessInfo *info, int bin_resource_id,
+                                                PebbleTask task);
 
 ProcessVisibility process_metadata_flags_visibility(PebbleProcessInfoFlags flags);
 

@@ -1,12 +1,12 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/flash.h"
+#include <pbl/drivers/flash.h>
 #include "flash_region/flash_region.h"
 #include "system/bootbits.h"
 #include "system/firmware_storage.h"
-#include "system/logging.h"
-#include "util/math.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/math.h"
 
 PBL_LOG_MODULE_DEFINE(service_prf_update, CONFIG_SERVICE_PRF_UPDATE_LOG_LEVEL);
 
@@ -31,10 +31,8 @@ static void prv_do_update(void) {
 
   const uint32_t total_length = description.description_length + description.firmware_length;
 #else
-  FirmwareHeader header =
-      firmware_storage_read_firmware_header(FLASH_REGION_FIRMWARE_DEST_BEGIN);
-  if (!firmware_storage_check_valid_firmware_header(FLASH_REGION_FIRMWARE_DEST_BEGIN,
-                                                    &header)) {
+  FirmwareHeader header = firmware_storage_read_firmware_header(FLASH_REGION_FIRMWARE_DEST_BEGIN);
+  if (!firmware_storage_check_valid_firmware_header(FLASH_REGION_FIRMWARE_DEST_BEGIN, &header)) {
     PBL_LOG_WRN("Invalid recovery firmware CRC in SPI flash!");
     goto done;
   }
@@ -43,10 +41,9 @@ static void prv_do_update(void) {
 #endif
 
   PBL_LOG_DBG("Erasing previous PRF...");
-  flash_region_erase_optimal_range(FLASH_REGION_SAFE_FIRMWARE_BEGIN,
-                                   FLASH_REGION_SAFE_FIRMWARE_BEGIN,
-                                   FLASH_REGION_SAFE_FIRMWARE_BEGIN + total_length,
-                                   FLASH_REGION_SAFE_FIRMWARE_END);
+  flash_region_erase_optimal_range(
+      FLASH_REGION_SAFE_FIRMWARE_BEGIN, FLASH_REGION_SAFE_FIRMWARE_BEGIN,
+      FLASH_REGION_SAFE_FIRMWARE_BEGIN + total_length, FLASH_REGION_SAFE_FIRMWARE_END);
 
   PBL_LOG_DBG("Copying PRF from scratch to the PRF slot");
   uint8_t buffer[512];

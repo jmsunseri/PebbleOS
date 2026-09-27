@@ -3,32 +3,23 @@
 
 #include "pbl/services/timeline/notification_jumboji_table.h"
 #include "pbl/services/timeline/notification_layout.h"
-#include "pbl/services/timeline/timeline_layout.h"
 
-#include "applib/fonts/fonts.h"
 #include "applib/graphics/gtypes.h"
-#include "applib/graphics/text.h"
-#include "apps/system/timeline/peek_layer.h"
-#include "font_resource_keys.auto.h"
 #include "kernel/pbl_malloc.h"
 #include "kernel/ui/kernel_ui.h"
 #include "resource/resource_ids.auto.h"
 #include "resource/timeline_resource_ids.auto.h"
-#include "pbl/services/analytics/analytics.h"
 #include "pbl/services/clock.h"
 #include "pbl/services/clock.h"
-#include "pbl/services/i18n/i18n.h"
 #include "pbl/services/blob_db/pin_db.h"
 #include "pbl/services/notifications/alerts_preferences_private.h"
+#include "pbl/services/notifications/notification_image.h"
 #include "pbl/services/timeline/timeline_resources.h"
 #include "shell/system_theme.h"
-#include "system/hexdump.h"
-#include "system/logging.h"
-#include "system/passert.h"
-#include "util/math.h"
-#include "util/size.h"
-#include "util/string.h"
-#include "util/trig.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
+#include "pbl/util/string.h"
+#include "pbl/util/testing.h"
 
 // NOTIFICATION
 // Title -> Sender/App
@@ -43,9 +34,9 @@
 // Footer -> Location
 
 #define LAYOUT_MAX_HEIGHT 2500
-#define CARD_MARGIN PBL_IF_ROUND_ELSE(12, 10)
+#define CARD_MARGIN       PBL_IF_ROUND_ELSE(12, 10)
 // All paddings relate to padding above the object unless othersize noted
-#define CARD_BOTTOM_PADDING 18
+#define CARD_BOTTOM_PADDING         18
 #define BOTTOM_BANNER_CIRCLE_RADIUS 8
 
 static void prv_card_render(NotificationLayout *layout, GContext *ctx, bool render);
@@ -65,61 +56,67 @@ static time_t prv_get_parent_timestamp(TimelineItem *reminder) {
 //////////////////////////////////////////
 
 static const NotificationStyle s_notification_styles[NumPreferredContentSizes] = {
-  [PreferredContentSizeSmall] = {
-    .header_padding = 3,
-    .title_padding = 3,
-    .subtitle_upper_padding = PBL_IF_RECT_ELSE(1, 4),
-    .subtitle_lower_padding = PBL_IF_RECT_ELSE(2, 1),
-    .location_offset = PBL_IF_RECT_ELSE(3, 7),
-    .location_margin = PBL_IF_RECT_ELSE(5, 9),
-    .body_icon_offset = 3,
-    .body_icon_margin = -5,
-    .body_padding = PBL_IF_RECT_ELSE(1, 1),
+  [PreferredContentSizeSmall] =
+      {
+        .header_padding = 3,
+        .title_padding = 3,
+        .subtitle_upper_padding = PBL_IF_RECT_ELSE(1, 4),
+        .subtitle_lower_padding = PBL_IF_RECT_ELSE(2, 1),
+        .location_offset = PBL_IF_RECT_ELSE(3, 7),
+        .location_margin = PBL_IF_RECT_ELSE(5, 9),
+        .body_icon_offset = 3,
+        .body_icon_margin = -5,
+        .body_padding = PBL_IF_RECT_ELSE(1, 1),
 #if PBL_ROUND
-    .timestamp_upper_padding = 6,
-    .timestamp_lower_padding = -3,
+        .timestamp_upper_padding = 6,
+        .timestamp_lower_padding = -3,
 #else
-    .timestamp_upper_padding = 3,
+        .timestamp_upper_padding = 3,
 #endif
-  },
-  [PreferredContentSizeMedium] = {
+      },
+  [PreferredContentSizeMedium] =
+      {
 #if PBL_ROUND
-    .body_padding = 3,
-    .subtitle_upper_padding = 3,
+        .body_padding = 3,
+        .subtitle_upper_padding = 3,
 #endif
-    .header_padding = 3,
-    .title_padding = 3,
-    .title_line_delta = -1,
-    .subtitle_lower_padding = PBL_IF_RECT_ELSE(6, 2),
-    .subtitle_line_delta = -1,
-    .location_offset = PBL_IF_RECT_ELSE(-2, 6),
-    .location_margin = PBL_IF_RECT_ELSE(3, 10),
-    .body_icon_offset = 3,
-    .body_icon_margin = -5,
-    .body_line_delta = -1,
+        .header_padding = 3,
+        .title_padding = 3,
+        .title_line_delta = -1,
+        .subtitle_lower_padding = PBL_IF_RECT_ELSE(6, 2),
+        .subtitle_line_delta = -1,
+        .location_offset = PBL_IF_RECT_ELSE(-2, 6),
+        .location_margin = PBL_IF_RECT_ELSE(3, 10),
+        .body_icon_offset = 3,
+        .body_icon_margin = -5,
+        .body_line_delta = -1,
 #if PBL_ROUND
-    .timestamp_upper_padding = 6,
-    .timestamp_lower_padding = -3,
+        .timestamp_upper_padding = 6,
+        .timestamp_lower_padding = -3,
 #else
-    .timestamp_upper_padding = 3
+        .timestamp_upper_padding = 3
 #endif
-  },
-  [PreferredContentSizeLarge] = {
-    .title_offset_if_body_icon = -2,
-    .subtitle_upper_padding = 2,
-    .subtitle_lower_padding = PBL_IF_RECT_ELSE(4, 2),
-    .subtitle_line_delta = -2,
-    .location_offset = 6,
-    .location_margin = 10,
-    .body_icon_margin = -10,
-    .body_padding = 2,
-    .body_line_delta = -2,
+      },
+  [PreferredContentSizeLarge] =
+      {
+        .title_offset_if_body_icon = -2,
+        .subtitle_upper_padding = 2,
+        .subtitle_lower_padding = PBL_IF_RECT_ELSE(4, 2),
+        .subtitle_line_delta = -2,
+        .location_offset = 6,
+        .location_margin = 10,
+        .body_icon_margin = -10,
+        .body_padding = 2,
+        // Round: -3 makes the Gothic-24 body pitch 21px, fitting 10 lines per 224px page
+        // (9*21 + the 29px last-line reserve = 218 <= 224) instead of 9, shrinking the
+        // page-seam gap from more than a line pitch (26px) to a 14px modulo.
+        .body_line_delta = PBL_IF_RECT_ELSE(-2, -3),
 #if PBL_ROUND
-    .timestamp_upper_padding = 6,
+        .timestamp_upper_padding = 6,
 #else
-    .timestamp_upper_padding = 3,
+        .timestamp_upper_padding = 3,
 #endif
-  },
+      },
   [PreferredContentSizeExtraLarge] = {
     .subtitle_upper_padding = 2,
     .subtitle_lower_padding = 4,
@@ -150,8 +147,7 @@ static void prv_reminder_timestamp_update(const LayoutLayer *layout_ref,
 
 static void prv_notification_timestamp_update(const LayoutLayer *layout_ref,
                                               const LayoutNodeTextDynamicConfig *config,
-                                              char *buffer,
-                                              bool render) {
+                                              char *buffer, bool render) {
   const NotificationLayout *layout = (NotificationLayout *)layout_ref;
   clock_get_since_time(buffer, config->buffer_size, layout->info.item->header.timestamp);
 }
@@ -160,12 +156,9 @@ static const EmojiEntry s_emoji_table[] = JUMBOJI_TABLE(EMOJI_ENTRY);
 
 static bool prv_each_emoji_codepoint(int index, Codepoint codepoint, void *context) {
   Codepoint *emoji_codepoint = context;
-  if (codepoint_is_end_of_word(codepoint) ||
-      codepoint_is_formatting_indicator(codepoint) ||
-      codepoint_is_skin_tone_modifier(codepoint) ||
-      codepoint_is_special(codepoint) ||
-      codepoint_is_zero_width(codepoint) ||
-      codepoint_should_skip(codepoint)) {
+  if (codepoint_is_end_of_word(codepoint) || codepoint_is_formatting_indicator(codepoint) ||
+      codepoint_is_skin_tone_modifier(codepoint) || codepoint_is_special(codepoint) ||
+      codepoint_is_zero_width(codepoint) || codepoint_should_skip(codepoint)) {
     // Skip this codepoint
     return true;
   } else if (codepoint_is_emoji(codepoint)) {
@@ -183,7 +176,7 @@ fail:
   return false;
 }
 
-T_STATIC ResourceId prv_get_emoji_icon_by_string(const EmojiEntry *table, const char *str) {
+PBL_T_STATIC ResourceId prv_get_emoji_icon_by_string(const EmojiEntry *table, const char *str) {
   if (!str) {
     return INVALID_RESOURCE;
   }
@@ -208,16 +201,145 @@ static bool prv_should_enlarge_emoji(NotificationLayout *layout) {
           prv_get_emoji_icon(layout) != INVALID_RESOURCE);
 }
 
+#if NOTIFICATION_IMAGE_SUPPORTED
+//! Space above and below the image band. Its own constant because body_padding is 0 for rect at
+//! the default content size, which leaves the image touching the body text.
+#define NOTIFICATION_IMAGE_PADDING       (8)
+#define NOTIFICATION_IMAGE_CORNER_RADIUS (4)
+
+#if PBL_ROUND
+//! Round cards page in fixed steps and the usable width narrows towards the top and bottom of the
+//! circle, so the image takes a page of its own and sits centred in it.
+#define NOTIFICATION_IMAGE_CIRCLE_INSET (8)
+#define NOTIFICATION_IMAGE_RADIUS       (DISP_ROWS / 2 - NOTIFICATION_IMAGE_CIRCLE_INSET)
+//! Centre of the page the image gets, which sits between the status bar and the paging arrow and so
+//! is a couple of pixels below the circle's own centre.
+#define NOTIFICATION_IMAGE_PAGE_CENTRE_Y (STATUS_BAR_LAYER_HEIGHT + LAYOUT_HEIGHT / 2)
+
+//! Whether a `width`-wide image of this aspect, centred in its page, clears the bezel.
+//!
+//! Checking the rectangle's own corners against the circle rather than bounding it by the inscribed
+//! square: a landscape photo is far wider than the square that fits the same circle, and photos are
+//! mostly landscape.
+static bool prv_image_fits_circle(int16_t width, uint8_t aspect) {
+  const int32_t half_w = width / 2;
+  const int32_t half_h = ((int32_t)width * aspect) / 32;
+  const int32_t dy = ABS(NOTIFICATION_IMAGE_PAGE_CENTRE_Y - DISP_ROWS / 2) + half_h;
+  const int32_t r = NOTIFICATION_IMAGE_RADIUS;
+  return (half_w * half_w) + (dy * dy) <= (r * r);
+}
+#endif
+
+//! Clamped height/width in sixteenths of the image the phone holds, or 0 for none. Clamping bounds
+//! the band a malformed attribute can reserve.
+static uint8_t prv_image_aspect(const NotificationLayout *layout) {
+  const uint8_t aspect =
+      attribute_get_uint8(layout->layout.attributes, AttributeIdImageAspectRatio, 0);
+  return aspect ? CLIP(aspect, NOTIFICATION_IMAGE_MIN_ASPECT, NOTIFICATION_IMAGE_MAX_ASPECT) : 0;
+}
+
+//! Size of the image itself for a content box `width` wide. Derived from the attribute rather than
+//! the bitmap, so the card's height is final before the pixels arrive and nothing reflows when they
+//! do — and so the requester and the renderer ask for the same thing.
+static GSize prv_image_size(const NotificationLayout *layout, int16_t width) {
+  const uint8_t aspect = prv_image_aspect(layout);
+  GSize size = {width, (width * aspect) / 16};
+#if PBL_ROUND
+  // Shrink to the widest that still clears the bezel. Bounded by the content width, so this is a
+  // few dozen integer comparisons at most, and the result is cached with the node's size.
+  while (size.w > 0 && !prv_image_fits_circle(size.w, aspect)) {
+    size.w--;
+    size.h = (size.w * aspect) / 16;
+  }
+#endif
+  return size;
+}
+
+static void prv_image_node_callback(GContext *ctx, const GRect *box,
+                                    const GTextNodeDrawConfig *config, bool render, GSize *size_out,
+                                    void *user_data) {
+  NotificationLayout *layout = user_data;
+  const GSize image = prv_image_size(layout, box->size.w);
+  GSize band = {box->size.w, image.h};
+  GPoint origin = box->origin;
+
+#if PBL_ROUND
+  // Give the image a page to itself: a fixed-height band that straddled a page seam would be
+  // sliced in half, since paging only knows how to break text.
+  if (config && config->paging && config->page_frame->size.h > 0) {
+    const int16_t page_h = config->page_frame->size.h;
+    const int16_t page_y =
+        config->origin_on_screen->y + box->origin.y - config->page_frame->origin.y;
+    const int16_t into_page = (page_y > 0) ? (page_y % page_h) : 0;
+    const int16_t skip = into_page ? (page_h - into_page) : 0;
+    band.h = skip + page_h;
+    origin.y += skip + (page_h - image.h) / 2;
+  }
+#endif
+  origin.x += (band.w - image.w) / 2;
+
+  if (render) {
+    const Uuid *item_id = &layout->info.item->header.id;
+    const GBitmap *bitmap = notification_image_lock(item_id);
+    if (bitmap) {
+      const GSize bitmap_size = bitmap->bounds.size;
+      const GRect dest = {
+        {origin.x + (image.w - bitmap_size.w) / 2, origin.y + (image.h - bitmap_size.h) / 2},
+        bitmap_size,
+      };
+      graphics_context_set_compositing_mode(ctx, GCompOpAssign);
+      graphics_draw_bitmap_in_rect(ctx, bitmap, &dest);
+    } else if (notification_image_is_pending(item_id)) {
+      // Still transferring: fill the reserved area so the card doesn't look broken. Once the phone
+      // answers NoImage this stops and the space is simply blank.
+      const GRect placeholder = {origin, image};
+      graphics_context_set_fill_color(ctx, GColorLightGray);
+      graphics_fill_round_rect(ctx, &placeholder, NOTIFICATION_IMAGE_CORNER_RADIUS, GCornersAll);
+    }
+    notification_image_unlock();
+  }
+  if (size_out) {
+    *size_out = band;
+  }
+}
+
+static GTextNode *prv_create_image_node(const LayoutLayer *layout_ref,
+                                        const LayoutNodeConstructorConfig *config) {
+  NotificationLayout *layout = (NotificationLayout *)layout_ref;
+  if (!prv_image_aspect(layout)) {
+    return NULL;
+  }
+  return &graphics_text_node_create_custom(prv_image_node_callback, layout)->node;
+}
+
+bool notification_layout_get_image_size(const LayoutLayer *layout_ref, GSize *size_out) {
+  const NotificationLayout *layout = (const NotificationLayout *)layout_ref;
+  if (!prv_image_aspect(layout)) {
+    return false;
+  }
+  *size_out = prv_image_size(layout, DISP_COLS - 2 * CARD_MARGIN);
+  return true;
+}
+#endif
+
+static PreferredContentSize prv_content_size(void) {
+  const PreferredContentSize size = alerts_preferences_get_notification_content_size();
+  return (size == NotificationContentSizeSystem) ? system_theme_get_content_size() : size;
+}
+
 //! Creates a GTextNode view node representing the inner content of the notification
 //! @param layout NotificationLayout of the notification
 //! @param use_body_icon Whether to display a body icon. Currently used by Jumboji
 //! @return the GTextNode view node of the notification
-static NOINLINE GTextNode *prv_create_view(NotificationLayout *layout, bool use_body_icon) {
-  const NotificationStyle *style = &s_notification_styles[system_theme_get_content_size()];
+static PBL_NOINLINE GTextNode *prv_create_view(NotificationLayout *layout, bool use_body_icon) {
+  const PreferredContentSize content_size = prv_content_size();
+  const LayoutContentSize text_size = ToLayoutContentSize(content_size);
+  const NotificationStyle *style = &s_notification_styles[content_size];
 
   const bool is_reminder = prv_is_reminder(layout);
   const LayoutNodeTextAttributeConfig header_config = {
     .attr_id = AttributeIdAppName,
+    .text.style = text_size,
     .text.style_font = TextStyleFont_Header,
     .text.extent.offset.y = style->header_padding,
     .text.extent.margin.h = style->header_padding,
@@ -226,6 +348,7 @@ static NOINLINE GTextNode *prv_create_view(NotificationLayout *layout, bool use_
     .text.extent.node.type = LayoutNodeType_TextDynamic,
     .update = prv_notification_timestamp_update,
     .buffer_size = TIME_STRING_REQUIRED_LENGTH,
+    .text.style = text_size,
     .text.style_font = PBL_IF_RECT_ELSE(TextStyleFont_Footer, TextStyleFont_Caption),
     .text.extent.offset.y = style->timestamp_upper_padding,
     .text.extent.margin.h = style->timestamp_upper_padding + style->timestamp_lower_padding,
@@ -234,12 +357,14 @@ static NOINLINE GTextNode *prv_create_view(NotificationLayout *layout, bool use_
     .text.extent.node.type = LayoutNodeType_TextDynamic,
     .update = prv_reminder_timestamp_update,
     .buffer_size = TIME_STRING_REQUIRED_LENGTH,
+    .text.style = text_size,
     .text.style_font = TextStyleFont_Header,
     .text.extent.offset.y = style->header_padding,
     .text.extent.margin.h = style->header_padding,
   };
   const LayoutNodeTextAttributeConfig title_config = {
     .attr_id = is_reminder ? AttributeIdUnused : AttributeIdTitle,
+    .text.style = text_size,
     .text.style_font = TextStyleFont_Header,
     .text.line_spacing_delta = style->title_line_delta,
     .text.alignment = use_body_icon ? LayoutTextAlignment_Center : LayoutTextAlignment_Auto,
@@ -249,6 +374,7 @@ static NOINLINE GTextNode *prv_create_view(NotificationLayout *layout, bool use_
   };
   const LayoutNodeTextAttributeConfig subtitle_config = {
     .attr_id = is_reminder ? AttributeIdTitle : AttributeIdSubtitle,
+    .text.style = text_size,
     .text.style_font = TextStyleFont_Title,
     .text.line_spacing_delta = style->subtitle_line_delta,
     .text.alignment = use_body_icon ? LayoutTextAlignment_Center : LayoutTextAlignment_Auto,
@@ -257,10 +383,11 @@ static NOINLINE GTextNode *prv_create_view(NotificationLayout *layout, bool use_
   };
   const LayoutNodeIconConfig body_icon_config = {
     .extent.node.type = LayoutNodeType_Icon,
-    .res_info = &(AppResourceInfo) {
-      .res_app_num = SYSTEM_APP,
-      .res_id = prv_get_emoji_icon(layout),
-    },
+    .res_info =
+        &(AppResourceInfo){
+          .res_app_num = SYSTEM_APP,
+          .res_id = prv_get_emoji_icon(layout),
+        },
     .align = GAlignCenter,
     .icon_layer = &layout->detail_icon_layer,
     .extent.offset.y = style->body_icon_offset,
@@ -268,6 +395,7 @@ static NOINLINE GTextNode *prv_create_view(NotificationLayout *layout, bool use_
   };
   const LayoutNodeTextAttributeConfig location_config = {
     .attr_id = AttributeIdLocationName,
+    .text.style = text_size,
     .text.style_font = TextStyleFont_Footer,
     .text.extent.offset.y = style->location_offset,
     .text.extent.margin.h = style->location_margin,
@@ -275,9 +403,9 @@ static NOINLINE GTextNode *prv_create_view(NotificationLayout *layout, bool use_
   const int reminder_body_line_delta = 0;
   const LayoutNodeTextAttributeConfig body_config = {
     .attr_id = AttributeIdBody,
+    .text.style = text_size,
     .text.style_font = is_reminder ? TextStyleFont_Caption : TextStyleFont_Body,
-    .text.line_spacing_delta = is_reminder ? reminder_body_line_delta :
-                                             style->body_line_delta,
+    .text.line_spacing_delta = is_reminder ? reminder_body_line_delta : style->body_line_delta,
     .text.extent.offset.y = style->body_padding,
     .text.extent.margin.h = style->body_padding,
   };
@@ -285,9 +413,18 @@ static NOINLINE GTextNode *prv_create_view(NotificationLayout *layout, bool use_
     .extent.node.type = LayoutNodeType_HeadingsParagraphs,
     .extent.offset.y = 12,
     .extent.margin.h = 5,
+    .size = text_size,
     .heading_style_font = TextStyleFont_Header,
     .paragraph_style_font = TextStyleFont_Body,
   };
+#if NOTIFICATION_IMAGE_SUPPORTED
+  const LayoutNodeConstructorConfig image_config = {
+    .extent.node.type = LayoutNodeType_Constructor,
+    .constructor = prv_create_image_node,
+    .extent.offset.y = NOTIFICATION_IMAGE_PADDING,
+    .extent.margin.h = 2 * NOTIFICATION_IMAGE_PADDING,
+  };
+#endif
   const LayoutNodeConfig *reminder_timestamp_node_config = NULL;
   const LayoutNodeConfig *notification_timestamp_node_config = NULL;
   const LayoutNodeConfig *header_node_config = NULL;
@@ -298,24 +435,23 @@ static NOINLINE GTextNode *prv_create_view(NotificationLayout *layout, bool use_
     notification_timestamp_node_config = &notification_timestamp_config.text.extent.node;
     header_node_config = &header_config.text.extent.node;
   }
-  if (!layout->info.show_notification_timestamp && PBL_IF_RECT_ELSE(use_body_icon, true)) {
+  // Only jumboji drops the timestamp: an enlarged emoji replaces it. Incoming (modal)
+  // notifications keep it on round too, matching rect.
+  if (!layout->info.show_notification_timestamp && use_body_icon) {
     notification_timestamp_node_config = NULL;
   }
-  const LayoutNodeConfig * const vertical_config_nodes[] = {
+  const LayoutNodeConfig *const vertical_config_nodes[] = {
     reminder_timestamp_node_config,
-#if PBL_ROUND
-    notification_timestamp_node_config,
-#endif
     header_node_config,
     &title_config.text.extent.node,
     &subtitle_config.text.extent.node,
     &location_config.text.extent.node,
-    use_body_icon ? &body_icon_config.extent.node :
-                    &body_config.text.extent.node,
+    use_body_icon ? &body_icon_config.extent.node : &body_config.text.extent.node,
     &headings_paragraphs_node.extent.node,
-#if PBL_RECT
-    notification_timestamp_node_config,
+#if NOTIFICATION_IMAGE_SUPPORTED
+    &image_config.extent.node,
 #endif
+    notification_timestamp_node_config,
   };
   const LayoutNodeVerticalConfig vertical_config = {
     .container.extent.node.type = LayoutNodeType_Vertical,
@@ -339,8 +475,8 @@ static void prv_card_init(NotificationLayout *layout, AttributeList *attributes,
   // init the icon
   const TimelineResourceId fallback_icon_id =
       notification_layout_get_fallback_icon_id(layout->info.item->header.type);
-  const uint32_t timeline_res_id = attribute_get_uint32(attributes, AttributeIdIconTiny,
-                                                        fallback_icon_id);
+  const uint32_t timeline_res_id =
+      attribute_get_uint32(attributes, AttributeIdIconTiny, fallback_icon_id);
   const TimelineResourceInfo timeline_res = {
     .res_id = timeline_res_id,
     .app_id = app_id,
@@ -364,7 +500,7 @@ static void prv_card_init(NotificationLayout *layout, AttributeList *attributes,
   layer_add_child(&layout->layout.layer, kino_layer_get_layer(&layout->icon_layer));
 }
 
-static void NOINLINE prv_init_view(NotificationLayout *layout) {
+static void PBL_NOINLINE prv_init_view(NotificationLayout *layout) {
   const bool use_body_icon = prv_should_enlarge_emoji(layout);
   layout->view_node = prv_create_view(layout, use_body_icon);
 
@@ -394,8 +530,9 @@ static void prv_hide_or_show_banner_icon(KinoLayer *icon_layer,
 #endif
 
 #if PBL_ROUND
-static CONST_FUNC int32_t prv_interpolate_linear(int32_t out_min, int32_t out_max, int32_t in_min,
-                                                 int32_t in_max, int32_t progress) {
+static PBL_CONST_FUNC int32_t prv_interpolate_linear(int32_t out_min, int32_t out_max,
+                                                     int32_t in_min, int32_t in_max,
+                                                     int32_t progress) {
   return out_min + (out_max - out_min) * (progress - in_min) / (in_max - in_min);
 }
 
@@ -421,33 +558,29 @@ static void prv_draw_banner_round(NotificationLayout *notification_layout, GCont
   graphics_context_set_fill_color(ctx, colors.bg_color);
   const int32_t saved_clip_box_size_h = ctx->draw_state.clip_box.size.h;
   const int32_t saved_clip_box_origin_y = ctx->draw_state.clip_box.origin.y;
-  ctx->draw_state.clip_box.origin.y =
-      MAX(ctx->draw_state.clip_box.origin.y - status_bar_height, 0);
+  ctx->draw_state.clip_box.origin.y = MAX(ctx->draw_state.clip_box.origin.y - status_bar_height, 0);
   ctx->draw_state.clip_box.size.h = DISP_ROWS;
   grect_clip(&ctx->draw_state.clip_box, &DISP_FRAME);
 
   const int32_t banner_movement_raw_offset =
-      CLIP(banner_peek_static_y - notification_layout_frame->origin.y,
-           0, banner_peek_static_y);
-  const int32_t banner_radius = prv_interpolate_linear(BOTTOM_BANNER_CIRCLE_RADIUS,
-                                                       BANNER_CIRCLE_RADIUS,
-                                                       0, banner_peek_static_y,
-                                                       banner_movement_raw_offset);
+      CLIP(banner_peek_static_y - notification_layout_frame->origin.y, 0, banner_peek_static_y);
+  const int32_t banner_radius =
+      prv_interpolate_linear(BOTTOM_BANNER_CIRCLE_RADIUS, BANNER_CIRCLE_RADIUS, 0,
+                             banner_peek_static_y, banner_movement_raw_offset);
   const int32_t banner_diameter = banner_radius * 2;
-  const int32_t banner_center_y = prv_interpolate_linear(0, LAYOUT_TOP_BANNER_ORIGIN_Y,
-                                                         0, banner_peek_static_y,
-                                                         banner_movement_raw_offset);
-  const GRect banner_frame = GRect(half_screen_width - banner_radius,
-                                   banner_center_y - banner_radius,
-                                   banner_diameter, banner_diameter);
+  const int32_t banner_center_y = prv_interpolate_linear(
+      0, LAYOUT_TOP_BANNER_ORIGIN_Y, 0, banner_peek_static_y, banner_movement_raw_offset);
+  const GRect banner_frame =
+      GRect(half_screen_width - banner_radius, banner_center_y - banner_radius, banner_diameter,
+            banner_diameter);
   graphics_fill_oval(ctx, banner_frame, GOvalScaleModeFitCircle);
   ctx->draw_state.clip_box.origin.y = saved_clip_box_origin_y;
   ctx->draw_state.clip_box.size.h = saved_clip_box_size_h;
 }
 #endif
 
-static NOINLINE void prv_card_render_internal(NotificationLayout *layout, GContext *ctx,
-                                              bool render) {
+static PBL_NOINLINE void prv_card_render_internal(NotificationLayout *layout, GContext *ctx,
+                                                  bool render) {
 #if PBL_ROUND
   const int orig_clip_height = ctx->draw_state.clip_box.size.h;
   const GRect *notification_layout_frame = &layout->layout.layer.frame;
@@ -464,7 +597,7 @@ static NOINLINE void prv_card_render_internal(NotificationLayout *layout, GConte
     // work around the clip box and smaller layout_height for circular text paging
     ctx->draw_state.clip_box.size.h = MIN(ctx->draw_state.clip_box.size.h, LAYOUT_HEIGHT);
 #else
-    static const GRect banner_box = { .size = { DISP_COLS, LAYOUT_BANNER_HEIGHT_RECT } };
+    static const GRect banner_box = {.size = {DISP_COLS, LAYOUT_BANNER_HEIGHT_RECT}};
     graphics_fill_rect(ctx, &banner_box);
 #endif
   }
@@ -478,12 +611,12 @@ static NOINLINE void prv_card_render_internal(NotificationLayout *layout, GConte
   const bool text_visible = render;
 #endif
   static const GRect box = {
-    .origin = { CARD_MARGIN, LAYOUT_TOP_BANNER_HEIGHT },
-    .size = { DISP_COLS - 2 * CARD_MARGIN, LAYOUT_MAX_HEIGHT },
+    .origin = {CARD_MARGIN, LAYOUT_TOP_BANNER_HEIGHT},
+    .size = {DISP_COLS - 2 * CARD_MARGIN, LAYOUT_MAX_HEIGHT},
   };
   static const GRect page_frame_on_screen = {
-    .origin = { 0, STATUS_BAR_LAYER_HEIGHT },
-    .size = { DISP_COLS, DISP_ROWS - STATUS_BAR_LAYER_HEIGHT - LAYOUT_ARROW_HEIGHT }
+    .origin = {0, STATUS_BAR_LAYER_HEIGHT},
+    .size = {DISP_COLS, DISP_ROWS - STATUS_BAR_LAYER_HEIGHT - LAYOUT_ARROW_HEIGHT}
   };
   static const GTextNodeDrawConfig config = {
     .page_frame = &page_frame_on_screen,
@@ -493,9 +626,8 @@ static NOINLINE void prv_card_render_internal(NotificationLayout *layout, GConte
     .paging = PBL_IF_ROUND_ELSE(true, false),
   };
   graphics_context_set_text_color(ctx, GColorBlack);
-  (text_visible ? graphics_text_node_draw :
-                  graphics_text_node_get_size)(layout->view_node, ctx, &box, &config,
-                                               &layout->view_size);
+  (text_visible ? graphics_text_node_draw : graphics_text_node_get_size)(
+      layout->view_node, ctx, &box, &config, &layout->view_size);
 
 #if PBL_ROUND
   if (render) {
@@ -555,41 +687,41 @@ bool notification_layout_verify(bool existing_attributes[]) {
 
 static void prv_layout_init_colors(NotificationLayout *notification_layout) {
   LayoutColors *colors = &notification_layout->colors;
-  
+
 #if PBL_BW
   const bool use_alternative_design = alerts_preferences_get_notification_alternative_design();
   if (use_alternative_design) {
     *colors = (LayoutColors){
-        .primary_color = GColorWhite,
-        .secondary_color = GColorBlack,
-        .bg_color = GColorBlack,
+      .primary_color = GColorWhite,
+      .secondary_color = GColorBlack,
+      .bg_color = GColorBlack,
     };
   } else {
     *colors = (LayoutColors){
-        .primary_color = GColorBlack,
-        .secondary_color = GColorBlack,
-        .bg_color = GColorLightGray,
+      .primary_color = GColorBlack,
+      .secondary_color = GColorBlack,
+      .bg_color = GColorLightGray,
     };
   }
 #else
   *colors = (LayoutColors){
-      .primary_color = GColorBlack,
-      .secondary_color = GColorBlack,
-      .bg_color = GColorLightGray,
+    .primary_color = GColorBlack,
+    .secondary_color = GColorBlack,
+    .bg_color = GColorLightGray,
   };
 #endif
 
 #if PBL_COLOR
   const bool is_notification =
       (notification_layout->info.item->header.type == TimelineItemTypeNotification);
-  const GColor default_bg_color = is_notification ? DEFAULT_NOTIFICATION_COLOR :
-                                                    DEFAULT_REMINDER_COLOR;
+  const GColor default_bg_color =
+      is_notification ? DEFAULT_NOTIFICATION_COLOR : DEFAULT_REMINDER_COLOR;
 
   LayoutLayer *layout = &notification_layout->layout;
-  colors->bg_color = (GColor) attribute_get_uint8(layout->attributes, AttributeIdBgColor,
-                                                  default_bg_color.argb);
-  colors->primary_color = (GColor) attribute_get_uint8(layout->attributes, AttributeIdPrimaryColor,
-                                                       GColorBlack.argb);
+  colors->bg_color =
+      (GColor)attribute_get_uint8(layout->attributes, AttributeIdBgColor, default_bg_color.argb);
+  colors->primary_color =
+      (GColor)attribute_get_uint8(layout->attributes, AttributeIdPrimaryColor, GColorBlack.argb);
 #endif
 }
 
@@ -614,6 +746,10 @@ static void prv_layout_destroy(LayoutLayer *layout) {
   NotificationLayout *notification_layout = (NotificationLayout *)layout;
   prv_destroy_view(notification_layout);
   kino_layer_deinit(&notification_layout->icon_layer);
+  // Every other layout deinits its base layer before freeing (see timeline_layout_deinit);
+  // skipping it leaks attached recognizers and frees a layer the touch system may still
+  // reference.
+  layer_deinit(&notification_layout->layout.layer);
   task_free(notification_layout);
 }
 
@@ -628,7 +764,7 @@ static void prv_layout_init(NotificationLayout *layout, const LayoutLayerConfig 
     .context_getter = prv_layout_get_context,
   };
   // init the layout struct
-  layout->layout = (LayoutLayer) {
+  layout->layout = (LayoutLayer){
     .mode = config->mode,
     .attributes = config->attributes,
     .impl = &s_layout_layer_impl,
@@ -656,6 +792,5 @@ static void prv_layout_init(NotificationLayout *layout, const LayoutLayerConfig 
 }
 
 TimelineResourceId notification_layout_get_fallback_icon_id(TimelineItemType item_type) {
-  return (item_type == TimelineItemTypeNotification) ? NOTIF_FALLBACK_ICON :
-                                                       REMINDER_FALLBACK_ICON;
+  return (item_type == TimelineItemTypeNotification) ? NOTIF_FALLBACK_ICON : REMINDER_FALLBACK_ICON;
 }

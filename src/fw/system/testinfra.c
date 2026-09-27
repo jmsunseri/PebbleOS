@@ -4,11 +4,8 @@
 #include "testinfra.h"
 
 #include "console/pulse_internal.h"
-#include "kernel/core_dump.h"
 #include "pbl/services/new_timer/new_timer.h"
-#include "system/bootbits.h"
-#include "system/logging.h"
-#include "system/passert.h"
+#include <pbl/logging/logging.h>
 
 #if !UNITTEST
 static void prv_emit_ready_log(void *unused) {
@@ -42,11 +39,3 @@ void notify_system_ready_for_communication(void) {
   new_timer_start(s_ready_log_timer, 500, prv_emit_ready_log, NULL, 0);
 #endif
 }
-
-#ifdef CONFIG_IS_BIGBOARD
-NORETURN test_infra_quarantine_board(const char *quarantine_reason) {
-  PBL_LOG_INFO("Quarantine Board: %s", quarantine_reason);
-  boot_bit_set(BOOT_BIT_FORCE_PRF);
-  core_dump_reset(true /* is_forced */);
-}
-#endif /* CONFIG_IS_BIGBOARD */

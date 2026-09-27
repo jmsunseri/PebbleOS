@@ -10,7 +10,6 @@
 
 #include <stdint.h>
 
-
 typedef enum {
   SettingsMenuItemBluetooth = 0,
   SettingsMenuItemNotifications,
@@ -21,6 +20,7 @@ typedef enum {
   SettingsMenuItemDateTime,
   SettingsMenuItemDisplay,
   SettingsMenuItemHealth,
+  SettingsMenuItemCharging,
 #ifdef CONFIG_THEMING
   SettingsMenuItemThemes,
 #endif

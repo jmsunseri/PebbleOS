@@ -5,7 +5,7 @@
 
 #include "applib/graphics/gtypes.h"
 #include "applib/graphics/gdraw_command_image.h"
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 
 #if !defined(CONFIG_RECOVERY_FW)
 #include "resource/timeline_resource_ids.auto.h"
@@ -31,7 +31,7 @@ typedef struct {
 } AppResourceInfo;
 
 typedef enum {
-  TimelineResourceSizeTiny, // 25x25
+  TimelineResourceSizeTiny,  // 25x25
   TimelineResourceSizeSmall, // 50x50
   TimelineResourceSizeLarge, // 80x80
   TimelineResourceSizeCount
@@ -48,20 +48,24 @@ typedef struct {
   uint32_t large;
 } TimelineLutEntry;
 
-#define TLUT_SIGNATURE MAKE_WORD('T', 'L', 'U', 'T')
+#define TLUT_SIGNATURE   MAKE_WORD('T', 'L', 'U', 'T')
 #define TLUT_DATA_OFFSET sizeof(TLUT_SIGNATURE)
 #define TLUT_RESOURCE_ID 1
 
-#define TIMELINE_TINY_RESOURCE_SIZE (GSize(25, 25))
+#define TIMELINE_TINY_RESOURCE_SIZE  (GSize(25, 25))
 #define TIMELINE_SMALL_RESOURCE_SIZE (GSize(50, 50))
 #define TIMELINE_LARGE_RESOURCE_SIZE (GSize(80, 80))
 
 static inline GSize timeline_resources_get_gsize(TimelineResourceSize size) {
   switch (size) {
-    case TimelineResourceSizeTiny: return TIMELINE_TINY_RESOURCE_SIZE;
-    case TimelineResourceSizeSmall: return TIMELINE_SMALL_RESOURCE_SIZE;
-    case TimelineResourceSizeLarge: return TIMELINE_LARGE_RESOURCE_SIZE;
-    default: return GSizeZero;
+    case TimelineResourceSizeTiny:
+      return TIMELINE_TINY_RESOURCE_SIZE;
+    case TimelineResourceSizeSmall:
+      return TIMELINE_SMALL_RESOURCE_SIZE;
+    case TimelineResourceSizeLarge:
+      return TIMELINE_LARGE_RESOURCE_SIZE;
+    default:
+      return GSizeZero;
   }
 }
 
@@ -88,7 +92,7 @@ bool timeline_resources_get_id_system(TimelineResourceId timeline_id, TimelineRe
 //! @param timeline_res pointer to TimelineResourceInfo which contains the timeline resource ID and
 //! corresponding app UUID
 //! @param size the TimelineResourceSize requested
-//! @param resource_id outparam pointer to AppResourceIdInfo containing the ID and
+//! @param res_info_out outparam pointer to AppResourceIdInfo containing the ID and
 //! ResAppNum for the requested timeline resource (both 0 if the resource could not be located)
 void timeline_resources_get_id(const TimelineResourceInfo *timeline_res, TimelineResourceSize size,
                                AppResourceInfo *res_info_out);

@@ -16,18 +16,31 @@
 void system_task_init(void);
 void system_task_timer_init(void);
 
-//! If your callback running on the system task takes awhile to run, call this regularly to show that
-//! you're still alive.
+//! If your callback running on the system task takes awhile to run, call this regularly to show
+//! that you're still alive.
 void system_task_watchdog_feed(void);
 
 typedef void (*SystemTaskEventCallback)(void *data);
 
 //! @param cb Callback function that will later be called from the system task
-//! @param should_context_switch A boolean that indicates our ISR should context switch at the end instead of
-//!                              resuming the previous task. See portEND_SWITCHING_ISR()
-bool system_task_add_callback_from_isr(SystemTaskEventCallback cb, void *data, bool* should_context_switch);
+//! @param data Context pointer passed to the callback
+//! @param should_context_switch A boolean that indicates our ISR should context switch at the end
+//! instead of
+//!                              resuming the previous task.
+bool system_task_add_callback_from_isr(SystemTaskEventCallback cb, void *data,
+                                       bool *should_context_switch);
+
+//! Enqueue without waiting, from task or ISR context, including with IRQs locked.
+//! Returns false if callbacks are disabled or the queue is full; never resets on failure.
+//! Only use when losing the callback is tolerable or the caller can retry later.
+bool system_task_add_callback_droppable(SystemTaskEventCallback cb, void *data);
+
+//! ISR wrapper for system_task_add_callback_droppable().
+bool system_task_add_callback_from_isr_droppable(SystemTaskEventCallback cb, void *data,
+                                                 bool *should_context_switch);
 
 //! @param cb Callback function that will later be called from the system task
+//! @param data Context pointer passed to the callback
 bool system_task_add_callback(SystemTaskEventCallback cb, void *data);
 
 //! @param block True if callbacks should be rejected, False if they should be let through.
@@ -37,7 +50,7 @@ void system_task_block_callbacks(bool block);
 uint32_t system_task_get_available_space(void);
 
 //! Debug! Return the callback we're currently executing.
-void* system_task_get_current_callback(void);
+void *system_task_get_current_callback(void);
 
 //! @param is_raised When true, priority of the KernelBG task is raised to a higher priority. When
 //! false, the priority is set to the normal priority.

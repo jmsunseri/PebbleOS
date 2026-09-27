@@ -12,15 +12,15 @@
 
 #include "pbl/services/blob_db/weather_db.h"
 #include "pbl/services/weather/weather_types.h"
-#include "util/list.h"
+#include "pbl/util/list.h"
 #include "util/time/time.h"
 
 #include <stdint.h>
 
-#define WEATHER_SERVICE_MAX_SHORT_PHRASE_BUFFER_SIZE (32)
+#define WEATHER_SERVICE_MAX_SHORT_PHRASE_BUFFER_SIZE     (32)
 #define WEATHER_SERVICE_MAX_WEATHER_LOCATION_BUFFER_SIZE (64)
-#define WEATHER_SERVICE_INVALID_DATA_LAST_UPDATE_TIME (0)
-#define WEATHER_SERVICE_LOCATION_FORECAST_UNKNOWN_TEMP (INT16_MAX)
+#define WEATHER_SERVICE_INVALID_DATA_LAST_UPDATE_TIME    (0)
+#define WEATHER_SERVICE_LOCATION_FORECAST_UNKNOWN_TEMP   (INT16_MAX)
 
 //! Unique handle for each weather location.
 typedef int WeatherLocationID;

@@ -4,7 +4,7 @@
 #include "applib/app.h"
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/number_window.h"
-#include "drivers/vibe.h"
+#include <pbl/drivers/vibe.h>
 #include "process_management/pebble_process_md.h"
 #include "process_state/app_state/app_state.h"
 
@@ -19,9 +19,8 @@ static void selected_pwm_percentage(NumberWindow *nw, void *ctx) {
 }
 
 static void handle_init(void) {
-  NumberWindow *vibe_num_window = number_window_create("Vibe Strength",
-      (NumberWindowCallbacks) { .selected = selected_pwm_percentage },
-      NULL);
+  NumberWindow *vibe_num_window = number_window_create(
+      "Vibe Strength", (NumberWindowCallbacks){.selected = selected_pwm_percentage}, NULL);
   app_state_set_user_data(vibe_num_window);
 
   uint8_t scale_granularity = 5; // 5 percent at a time
@@ -46,10 +45,10 @@ static void s_main(void) {
   handle_deinit();
 }
 
-const PebbleProcessMd* vibe_strength_demo_get_info() {
+const PebbleProcessMd *vibe_strength_demo_get_info() {
   static const PebbleProcessMdSystem s_vibe_strength_info = {
     .common.main_func = s_main,
     .name = "Vibe Strength"
   };
-  return (const PebbleProcessMd*) &s_vibe_strength_info;
+  return (const PebbleProcessMd *)&s_vibe_strength_info;
 }

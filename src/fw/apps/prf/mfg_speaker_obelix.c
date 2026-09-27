@@ -9,10 +9,10 @@
 #include "apps/prf/mfg_test_result.h"
 #include "kernel/pbl_malloc.h"
 #include "board/board.h"
-#include "drivers/pmic/npm1300.h"
+#include <pbl/drivers/pmic/npm1300.h>
 #include "process_management/pebble_process_md.h"
 #include "process_state/app_state/app_state.h"
-#include "drivers/audio.h"
+#include <pbl/drivers/audio.h>
 
 typedef struct {
   Window window;
@@ -22,20 +22,19 @@ typedef struct {
 } AppData;
 
 static const int16_t sine_wave_4k[] = {
-  0, 32767, 0, -32768, 0, 32767, 0, -32768,
-  0, 32767, 0, -32768, 0, 32767, 0, -32768,
+  0, 32767, 0, -32768, 0, 32767, 0, -32768, 0, 32767, 0, -32768, 0, 32767, 0, -32768,
 };
 
 static void prv_audio_trans_handler(uint32_t *free_size) {
-    uint32_t available_size = *free_size;
-    while (available_size > sizeof(sine_wave_4k)) {
-      available_size = audio_write(AUDIO, (void*)&sine_wave_4k[0], sizeof(sine_wave_4k));
-    }
+  uint32_t available_size = *free_size;
+  while (available_size > sizeof(sine_wave_4k)) {
+    available_size = audio_write(AUDIO, (void *)&sine_wave_4k[0], sizeof(sine_wave_4k));
+  }
 }
 
 static void prv_play_audio(void) {
   audio_start(AUDIO, prv_audio_trans_handler);
-  audio_set_volume(AUDIO, 100);
+  audio_set_volume(AUDIO, 30);
 }
 
 static void prv_result_confirmed(ClickRecognizerRef recognizer, void *context) {
@@ -105,11 +104,12 @@ static void s_main(void) {
 
 const PebbleProcessMd *mfg_speaker_obelix_app_get_info(void) {
   static const PebbleProcessMdSystem s_app_info = {
-      .common.main_func = &s_main,
-      // UUID: c1479d03-5550-4444-b1e7-e2cbad0e5678
-      .common.uuid = {0xc1, 0x47, 0x9d, 0x03, 0x55, 0x50, 0x44, 0x44, 0xb1, 0xe7, 0xe2, 0xcb, 0xad,
-                      0x0e, 0x56, 0x78},
-      .name = "MfgSpeakerObelix",
+    .common.main_func = &s_main,
+    // UUID: c1479d03-5550-4444-b1e7-e2cbad0e5678
+    .common.uuid =
+        {0xc1, 0x47, 0x9d, 0x03, 0x55, 0x50, 0x44, 0x44, 0xb1, 0xe7, 0xe2, 0xcb, 0xad, 0x0e, 0x56,
+         0x78},
+    .name = "MfgSpeakerObelix",
   };
   return (const PebbleProcessMd *)&s_app_info;
 }

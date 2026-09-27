@@ -8,7 +8,7 @@
 #include "recognizer_manager.h"
 
 #include "pbl/services/touch/touch_event.h"
-#include "util/list.h"
+#include "pbl/util/list.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -30,11 +30,14 @@ struct Recognizer {
 
   union {
     struct {
-      bool handling_touch_event:1;
-      bool is_owned:1;
+      bool handling_touch_event : 1;
+      bool is_owned : 1;
     };
     uint32_t flags;
   };
+
+  // Kept outside the flags union so that recognizer_reset() never clears it
+  bool is_static : 1;
 
   struct Recognizer *fail_after;
   RecognizerSimultaneousWithCb simultaneous_with_cb;

@@ -6,9 +6,11 @@
 #include "pbl/services/activity/activity_private.h"
 #include "pbl/services/activity/insights_settings.h"
 #include "pbl/services/filesystem/pfs.h"
-#include "util/attributes.h"
+#include "pbl/kernel/compiler.h"
 
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "clar.h"
 
@@ -16,7 +18,6 @@
 #include "stubs_analytics.h"
 #include "stubs_app_install_manager.h"
 #include "stubs_app_state.h"
-#include "stubs_attribute.h"
 #include "stubs_event_service_client.h"
 #include "stubs_health_db.h"
 #include "stubs_health_util.h"
@@ -49,8 +50,8 @@ static struct tm s_init_time_tm = {
 };
 
 #define ACTIVE_MINUTES 2
-#define AVERAGE_STEPS 1000
-#define HIGH_STEPS 2000
+#define AVERAGE_STEPS  1000
+#define HIGH_STEPS     2000
 
 #define MAX_ACTIVITY_SESSIONS 24
 
@@ -86,7 +87,6 @@ bool activity_get_metric(ActivityMetric metric, uint32_t history_len, int32_t *h
   return true;
 }
 
-
 // Update the sleep metrics based on the current set of sleep sessions for today
 static void prv_update_sleep_metrics(void) {
   ActivitySession activity_sessions[MAX_ACTIVITY_SESSIONS];
@@ -97,8 +97,8 @@ static void prv_update_sleep_metrics(void) {
   time_t sleep_enter_utc = -1;
   time_t sleep_exit_utc = -1;
   for (uint32_t i = 0; i < num_sessions; i++) {
-    time_t exit_utc = activity_sessions[i].start_utc
-                    + activity_sessions[i].length_min * SECONDS_PER_MINUTE;
+    time_t exit_utc =
+        activity_sessions[i].start_utc + activity_sessions[i].length_min * SECONDS_PER_MINUTE;
     if (activity_sessions[i].type == ActivitySessionType_Sleep) {
       if (sleep_enter_utc == -1) {
         sleep_enter_utc = activity_sessions[i].start_utc;
@@ -111,14 +111,25 @@ static void prv_update_sleep_metrics(void) {
   }
 
   s_data.metric_history[ActivityMetricSleepEnterAtSeconds][0] =
-                 time_util_get_minute_of_day(sleep_enter_utc) * SECONDS_PER_MINUTE;
+      time_util_get_minute_of_day(sleep_enter_utc) * SECONDS_PER_MINUTE;
   s_data.metric_history[ActivityMetricSleepExitAtSeconds][0] =
-                 time_util_get_minute_of_day(sleep_exit_utc) * SECONDS_PER_MINUTE;
+      time_util_get_minute_of_day(sleep_exit_utc) * SECONDS_PER_MINUTE;
   s_data.metric_history[ActivityMetricSleepTotalSeconds][0] = total_seconds;
 }
 
+time_t activity_sessions_prv_get_sleep_window_start_utc(time_t now_utc) {
+  time_t start_of_today_utc = time_util_get_midnight_of(now_utc);
+  int minute_of_day = time_util_get_minute_of_day(now_utc);
+  int last_sleep_second_of_day = ACTIVITY_LAST_SLEEP_MINUTE_OF_DAY * SECONDS_PER_MINUTE;
 
-void activity_sessions_prv_get_sleep_bounds_utc(time_t now_utc, time_t *enter_utc, time_t *exit_utc) {
+  if (minute_of_day < ACTIVITY_LAST_SLEEP_MINUTE_OF_DAY) {
+    return start_of_today_utc - (SECONDS_PER_DAY - last_sleep_second_of_day);
+  }
+  return start_of_today_utc + last_sleep_second_of_day;
+}
+
+void activity_sessions_prv_get_sleep_bounds_utc(time_t now_utc, time_t *enter_utc,
+                                                time_t *exit_utc) {
   ActivitySession activity_sessions[MAX_ACTIVITY_SESSIONS];
   uint32_t num_sessions = MAX_ACTIVITY_SESSIONS;
 
@@ -133,14 +144,13 @@ void activity_sessions_prv_get_sleep_bounds_utc(time_t now_utc, time_t *enter_ut
     if (*enter_utc == 0) {
       *enter_utc = activity_sessions[i].start_utc;
     }
-    time_t session_exit_utc = activity_sessions[i].start_utc
-                              + activity_sessions[i].length_min * SECONDS_PER_MINUTE;
+    time_t session_exit_utc =
+        activity_sessions[i].start_utc + activity_sessions[i].length_min * SECONDS_PER_MINUTE;
     if (*exit_utc == 0 || session_exit_utc > *exit_utc) {
       *exit_utc = session_exit_utc;
     }
   }
 }
-
 
 // Appends a new sleep session to the sleep sessions array and increments the current SleepExit and
 // SleepTotal metrics accordingly
@@ -155,8 +165,8 @@ void prv_add_sleep_or_nap_session(ActivitySessionType session_type, double offse
   time_t midnight = time_util_get_midnight_of(rtc_get_time());
   time_t previous_exit_utc;
   if (s_data.num_sessions > 0) {
-    previous_exit_utc = s_data.activity_sessions[prev].start_utc
-                        + (s_data.activity_sessions[prev].length_min * SECONDS_PER_MINUTE);
+    previous_exit_utc = s_data.activity_sessions[prev].start_utc +
+                        (s_data.activity_sessions[prev].length_min * SECONDS_PER_MINUTE);
   } else {
     previous_exit_utc = midnight;
   }
@@ -170,7 +180,7 @@ void prv_add_sleep_or_nap_session(ActivitySessionType session_type, double offse
     printf("now_utc: %ld, end_utc: %ld\n", rtc_get_time(), start_utc + length_sec);
   }
   cl_assert(start_utc + length_sec <= rtc_get_time());
-  s_data.activity_sessions[s_data.num_sessions++] = (ActivitySession) {
+  s_data.activity_sessions[s_data.num_sessions++] = (ActivitySession){
     .type = session_type,
     .length_min = length_min,
     .start_utc = start_utc,
@@ -195,7 +205,7 @@ void prv_add_nap_session(double offset_hours, double length_hours) {
 void prv_add_walk_session(double offset_hours, double length_hours) {
   const uint32_t length_min = length_hours * MINUTES_PER_HOUR;
 
-  s_data.activity_sessions[s_data.num_sessions++] = (ActivitySession) {
+  s_data.activity_sessions[s_data.num_sessions++] = (ActivitySession){
     .type = ActivitySessionType_Walk,
     .length_min = length_min,
     .start_utc = rtc_get_time(),
@@ -212,8 +222,7 @@ bool activity_get_sessions(uint32_t *session_entries, ActivitySession *sessions)
   // Only return the sleep sessions that belong to "today"
   time_t start_of_today_utc = time_util_get_midnight_of(rtc_get_time());
   int last_sleep_second_of_day = ACTIVITY_LAST_SLEEP_MINUTE_OF_DAY * SECONDS_PER_MINUTE;
-  time_t sleep_earliest_end_utc = start_of_today_utc
-                                - (SECONDS_PER_DAY - last_sleep_second_of_day);
+  time_t sleep_earliest_end_utc = start_of_today_utc - (SECONDS_PER_DAY - last_sleep_second_of_day);
 
   uint32_t num_sessions_returned = 0;
   for (uint32_t i = 0; i < s_data.num_sessions; i++) {
@@ -221,8 +230,8 @@ bool activity_get_sessions(uint32_t *session_entries, ActivitySession *sessions)
       // No more room
       break;
     }
-    time_t session_end = s_data.activity_sessions[i].start_utc
-                       + s_data.activity_sessions[i].length_min * SECONDS_PER_MINUTE;
+    time_t session_end = s_data.activity_sessions[i].start_utc +
+                         s_data.activity_sessions[i].length_min * SECONDS_PER_MINUTE;
     if (session_end >= sleep_earliest_end_utc) {
       // This session should be included in today's sessions
       sessions[num_sessions_returned++] = s_data.activity_sessions[i];
@@ -273,12 +282,11 @@ ActivityScalarStore activity_metrics_prv_steps_per_minute(void) {
   return s_data.steps_per_minute;
 }
 
-
 // =========================================================================================
 // PFS stubs
 static PFSFileChangedCallback pfs_watch_cb = NULL;
-PFSCallbackHandle pfs_watch_file(const char* filename, PFSFileChangedCallback callback,
-                                 uint8_t event_flags, void* data) {
+PFSCallbackHandle pfs_watch_file(const char *filename, PFSFileChangedCallback callback,
+                                 uint8_t event_flags, void *data) {
   pfs_watch_cb = callback;
   return NULL;
 }
@@ -289,16 +297,52 @@ void pfs_unwatch_file(PFSCallbackHandle cb_handle) {
 
 // =========================================================================================
 // Timeline item stubs
+// We keep the headings/paragraphs of the most recently built timeline item so tests can assert
+// on the metrics a notification reports. The strings are copied out here because the insight
+// code frees its StringLists right after the notification is pushed.
+#define MAX_CAPTURED_METRICS 8
+
 static TimelineItem s_item = {};
+static char s_captured_headings[MAX_CAPTURED_METRICS][32];
+static char s_captured_values[MAX_CAPTURED_METRICS][32];
+static uint32_t s_num_captured_metrics;
+
 TimelineItem *timeline_item_create_with_attributes(time_t timestamp, uint16_t duration,
                                                    TimelineItemType type, LayoutId layout,
                                                    AttributeList *attr_list,
                                                    TimelineItemActionGroup *action_group) {
   uuid_generate(&s_item.header.id);
+
+  s_num_captured_metrics = 0;
+  if (attr_list) {
+    StringList *headings = attribute_get_string_list(attr_list, AttributeIdHeadings);
+    StringList *values = attribute_get_string_list(attr_list, AttributeIdParagraphs);
+    const size_t num_metrics = string_list_count(headings);
+    for (size_t i = 0; i < num_metrics && i < MAX_CAPTURED_METRICS; i++) {
+      const char *heading = string_list_get_at(headings, i);
+      const char *value = string_list_get_at(values, i);
+      strncpy(s_captured_headings[i], heading ? heading : "", sizeof(s_captured_headings[i]) - 1);
+      s_captured_headings[i][sizeof(s_captured_headings[i]) - 1] = '\0';
+      strncpy(s_captured_values[i], value ? value : "", sizeof(s_captured_values[i]) - 1);
+      s_captured_values[i][sizeof(s_captured_values[i]) - 1] = '\0';
+      s_num_captured_metrics++;
+    }
+  }
+
   return &s_item;
 }
 
-void timeline_item_destroy(TimelineItem* item) {
+// Returns the value reported for the given heading, or -1 if the heading was not present.
+static int prv_get_notification_metric(const char *heading) {
+  for (uint32_t i = 0; i < s_num_captured_metrics; i++) {
+    if (strcmp(s_captured_headings[i], heading) == 0) {
+      return atoi(s_captured_values[i]);
+    }
+  }
+  return -1;
+}
+
+void timeline_item_destroy(TimelineItem *item) {
   return;
 }
 
@@ -322,7 +366,7 @@ bool timeline_exists(Uuid *id) {
 
 // =========================================================================================
 // Notification stubs
-void notification_storage_store(TimelineItem* notification) {
+void notification_storage_store(TimelineItem *notification) {
   s_data.notifs_shown++;
 }
 
@@ -346,7 +390,7 @@ void test_activity_insights__initialize(void) {
   s_activation_time = 0;
   s_health_app_opened_version = 0;
 
-  s_data = (StaticData) {};
+  s_data = (StaticData){};
 }
 
 // ---------------------------------------------------------------------------------------
@@ -361,7 +405,7 @@ void test_activity_insights__calculate_metric_history_stats(void) {
   static const int32_t complete_history[ACTIVITY_HISTORY_DAYS] = {
     1234, // This value is ignored since it's loaded in as the current value
     6233, 4277, 9857, 4737, 6540, 719, 9917, 7019, 6347, 4704, 5050, 8370, 4200, 8284, 6664,
-    9177, 9734, 2330, 3951, 1568, 871, 776, 8751, 987, 7813, 772, 5079, 7438, 428
+    9177, 9734, 2330, 3951, 1568, 871, 776,  8751, 987,  7813, 772,  5079, 7438, 428
   };
   memcpy(&s_data.metric_history[ActivityMetricStepCount], complete_history,
          sizeof(complete_history));
@@ -375,11 +419,10 @@ void test_activity_insights__calculate_metric_history_stats(void) {
   // Test sparse history
   static const int32_t sparse_history[ACTIVITY_HISTORY_DAYS] = {
     1234, // This value is ignored since it's loaded in as the current day
-    6233, 4277, 9857, 0, 6540, 719, 0, 0, 0, 0, 0, 0, 0, 0, 6664, 9177, 0, 2330, 3951, 1568,
-    871, 0, 8751, 0, 7813, 772, 0, 7438, 428
+    6233, 4277, 9857, 0,    6540, 719, 0, 0,    0, 0,    0,   0, 0,    0,  6664,
+    9177, 0,    2330, 3951, 1568, 871, 0, 8751, 0, 7813, 772, 0, 7438, 428
   };
-  memcpy(&s_data.metric_history[ActivityMetricStepCount], sparse_history,
-         sizeof(sparse_history));
+  memcpy(&s_data.metric_history[ActivityMetricStepCount], sparse_history, sizeof(sparse_history));
   prv_calculate_metric_history_stats(ActivityMetricStepCount, &stats);
   cl_assert_equal_i(stats.median, 4277);
   cl_assert_equal_i(stats.total_days, 16);
@@ -394,19 +437,12 @@ void test_activity_insights__sleep_reward(void) {
   const ActivityScalarStore GOOD_SLEEP = 8 * MINUTES_PER_HOUR;
 
   static const int32_t sleep_history[ACTIVITY_HISTORY_DAYS] = {
-    GOOD_SLEEP,     // This is 'today'
-    GOOD_SLEEP,     // User has had good sleep for past 3 nights
-    GOOD_SLEEP,
-    GOOD_SLEEP,
-    AVERAGE_SLEEP,  // Average sleep to make sure our median is fairly low
-    AVERAGE_SLEEP,
-    AVERAGE_SLEEP,
-    AVERAGE_SLEEP,
-    AVERAGE_SLEEP,
-    AVERAGE_SLEEP,
-    AVERAGE_SLEEP,
-    AVERAGE_SLEEP,
-    AVERAGE_SLEEP
+    GOOD_SLEEP, // This is 'today'
+    GOOD_SLEEP, // User has had good sleep for past 3 nights
+    GOOD_SLEEP,    GOOD_SLEEP,
+    AVERAGE_SLEEP, // Average sleep to make sure our median is fairly low
+    AVERAGE_SLEEP, AVERAGE_SLEEP, AVERAGE_SLEEP, AVERAGE_SLEEP,
+    AVERAGE_SLEEP, AVERAGE_SLEEP, AVERAGE_SLEEP, AVERAGE_SLEEP
   };
   memcpy(&s_data.metric_history[ActivityMetricSleepTotalSeconds], sleep_history,
          sizeof(sleep_history));
@@ -437,51 +473,52 @@ void test_activity_insights__sleep_reward(void) {
     cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 0);
   }
 
-//  // These tests only make sense if the insights are enabled
-//  // Now we shouldn't see another notification for the next 6 days
-//  for (int i = 0; i < 6; ++i) {
-//    rtc_set_time(rtc_get_time() + SECONDS_PER_DAY);
-//    activity_insights_recalculate_stats();
-//    activity_insights_process_sleep_data(rtc_get_time());
-//    cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 1);
-//  }
-//
-//  rtc_set_time(rtc_get_time() + SECONDS_PER_DAY);
-//  activity_insights_recalculate_stats();
-//  activity_insights_process_sleep_data(rtc_get_time());
-//  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 2);
-//
-//  // Make sure we don't trigger if we didn't get enough sleep
-//  rtc_set_time(rtc_get_time() + 7 * SECONDS_PER_DAY);
-//  activity_insights_recalculate_stats();
-//  s_data.metric_history[ActivityMetricSleepTotalSeconds][0] = AVERAGE_SLEEP;
-//  activity_insights_process_sleep_data(rtc_get_time());
-//  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 2);
-//
-//  // Fall back asleep, make sure we get the reward
-//  s_data.metric_history[ActivityMetricSleepState][0] = ActivitySleepStateLightSleep;
-//  activity_insights_process_sleep_data(rtc_get_time());
-//  s_data.metric_history[ActivityMetricSleepState][0] = ActivitySleepStateAwake;
-//  s_data.metric_history[ActivityMetricSleepTotalSeconds][0] = GOOD_SLEEP;
-//  activity_insights_process_sleep_data(rtc_get_time());
-//  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 3);
-//
-//  // Make sure setting enable to false actually disables things
-//  rtc_set_time(rtc_get_time() + 7 * SECONDS_PER_DAY);
-//  activity_insights_recalculate_stats();
-//  ActivityInsightSettings disabled_sleep;
-//  activity_insights_settings_read(ACTIVITY_INSIGHTS_SETTINGS_SLEEP_REWARD, &disabled_sleep);
-//  disabled_sleep.enabled = false,
-//  settings_file_set(NULL, /* fake settings file don't care */
-//                    ACTIVITY_INSIGHTS_SETTINGS_SLEEP_REWARD, strlen(ACTIVITY_INSIGHTS_SETTINGS_SLEEP_REWARD),
-//                    &disabled_sleep, sizeof(disabled_sleep));
-//  pfs_watch_cb(NULL); // Update the settings cache
-//  activity_insights_process_sleep_data(rtc_get_time());
-//  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 3);
+  //  // These tests only make sense if the insights are enabled
+  //  // Now we shouldn't see another notification for the next 6 days
+  //  for (int i = 0; i < 6; ++i) {
+  //    rtc_set_time(rtc_get_time() + SECONDS_PER_DAY);
+  //    activity_insights_recalculate_stats();
+  //    activity_insights_process_sleep_data(rtc_get_time());
+  //    cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 1);
+  //  }
+  //
+  //  rtc_set_time(rtc_get_time() + SECONDS_PER_DAY);
+  //  activity_insights_recalculate_stats();
+  //  activity_insights_process_sleep_data(rtc_get_time());
+  //  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 2);
+  //
+  //  // Make sure we don't trigger if we didn't get enough sleep
+  //  rtc_set_time(rtc_get_time() + 7 * SECONDS_PER_DAY);
+  //  activity_insights_recalculate_stats();
+  //  s_data.metric_history[ActivityMetricSleepTotalSeconds][0] = AVERAGE_SLEEP;
+  //  activity_insights_process_sleep_data(rtc_get_time());
+  //  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 2);
+  //
+  //  // Fall back asleep, make sure we get the reward
+  //  s_data.metric_history[ActivityMetricSleepState][0] = ActivitySleepStateLightSleep;
+  //  activity_insights_process_sleep_data(rtc_get_time());
+  //  s_data.metric_history[ActivityMetricSleepState][0] = ActivitySleepStateAwake;
+  //  s_data.metric_history[ActivityMetricSleepTotalSeconds][0] = GOOD_SLEEP;
+  //  activity_insights_process_sleep_data(rtc_get_time());
+  //  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 3);
+  //
+  //  // Make sure setting enable to false actually disables things
+  //  rtc_set_time(rtc_get_time() + 7 * SECONDS_PER_DAY);
+  //  activity_insights_recalculate_stats();
+  //  ActivityInsightSettings disabled_sleep;
+  //  activity_insights_settings_read(ACTIVITY_INSIGHTS_SETTINGS_SLEEP_REWARD, &disabled_sleep);
+  //  disabled_sleep.enabled = false,
+  //  settings_file_set(NULL, /* fake settings file don't care */
+  //                    ACTIVITY_INSIGHTS_SETTINGS_SLEEP_REWARD,
+  //                    strlen(ACTIVITY_INSIGHTS_SETTINGS_SLEEP_REWARD), &disabled_sleep,
+  //                    sizeof(disabled_sleep));
+  //  pfs_watch_cb(NULL); // Update the settings cache
+  //  activity_insights_process_sleep_data(rtc_get_time());
+  //  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 3);
 }
 
 static void prv_minute_update(int iterations) {
-  for ( ; iterations > 0; --iterations) {
+  for (; iterations > 0; --iterations) {
     rtc_set_time(rtc_get_time() + SECONDS_PER_MINUTE);
     activity_insights_process_minute_data(rtc_get_time());
   }
@@ -492,16 +529,8 @@ void prv_set_step_history_avg() {
   // History with low median
   static const int32_t step_history[ACTIVITY_HISTORY_DAYS] = {
     AVERAGE_STEPS, // This is 'today'
-    AVERAGE_STEPS,
-    AVERAGE_STEPS,
-    AVERAGE_STEPS,
-    AVERAGE_STEPS,
-    AVERAGE_STEPS,
-    AVERAGE_STEPS,
-    AVERAGE_STEPS,
-    AVERAGE_STEPS,
-    AVERAGE_STEPS,
-    AVERAGE_STEPS
+    AVERAGE_STEPS, AVERAGE_STEPS, AVERAGE_STEPS, AVERAGE_STEPS, AVERAGE_STEPS,
+    AVERAGE_STEPS, AVERAGE_STEPS, AVERAGE_STEPS, AVERAGE_STEPS, AVERAGE_STEPS
   };
   memcpy(&s_data.metric_history[ActivityMetricStepCount], &step_history, sizeof(step_history));
 }
@@ -510,16 +539,10 @@ void prv_set_sleep_history_avg() {
   const ActivityScalarStore AVERAGE_SLEEP = 5 * MINUTES_PER_HOUR;
 
   static const int32_t sleep_history[ACTIVITY_HISTORY_DAYS] = {
-    AVERAGE_SLEEP,  // This is 'today'
-    AVERAGE_SLEEP,  // Average sleep to make sure our median is fairly low
-    AVERAGE_SLEEP,
-    AVERAGE_SLEEP,
-    AVERAGE_SLEEP,
-    AVERAGE_SLEEP,
-    AVERAGE_SLEEP,
-    AVERAGE_SLEEP,
-    AVERAGE_SLEEP,
-    AVERAGE_SLEEP
+    AVERAGE_SLEEP, // This is 'today'
+    AVERAGE_SLEEP, // Average sleep to make sure our median is fairly low
+    AVERAGE_SLEEP, AVERAGE_SLEEP, AVERAGE_SLEEP, AVERAGE_SLEEP,
+    AVERAGE_SLEEP, AVERAGE_SLEEP, AVERAGE_SLEEP, AVERAGE_SLEEP
   };
   memcpy(&s_data.metric_history[ActivityMetricSleepTotalSeconds], sleep_history,
          sizeof(sleep_history));
@@ -570,13 +593,13 @@ void test_activity_insights__activity_reward_trigger(void) {
   prv_minute_update(ACTIVE_MINUTES);
   cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 0);
 
-//  // This tests multi day triggers if insights are enabled
-//  prv_minute_update(ACTIVE_MINUTES);
-//  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 0);
-//  rtc_set_time(rtc_get_time() + 1 * SECONDS_PER_DAY);
-//  activity_insights_recalculate_stats();
-//  prv_minute_update(ACTIVE_MINUTES);
-//  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 0);
+  //  // This tests multi day triggers if insights are enabled
+  //  prv_minute_update(ACTIVE_MINUTES);
+  //  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 0);
+  //  rtc_set_time(rtc_get_time() + 1 * SECONDS_PER_DAY);
+  //  activity_insights_recalculate_stats();
+  //  prv_minute_update(ACTIVE_MINUTES);
+  //  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 0);
 }
 
 void test_activity_insights__disable_activity_reward(void) {
@@ -641,7 +664,7 @@ void test_activity_insights__sleep_summary(void) {
 
   // Put in a 1 hour sleep session that ends at 11pm. This is after
   // ACTIVITY_LAST_SLEEP_MINUTE_OF_DAY (9pm), so it should be part of "tonight's" sleep.
-  prv_add_sleep_session(22, 1);     // Starting 22 hours from midnight of today
+  prv_add_sleep_session(22, 1); // Starting 22 hours from midnight of today
 
   // Awake until 11:45pm
   rtc_set_time(rtc_get_time() + 15 * SECONDS_PER_MINUTE);
@@ -654,11 +677,11 @@ void test_activity_insights__sleep_summary(void) {
   Uuid orig_id = s_last_timeline_id;
 
   // Advance to midnight and perform the midnight rollover logic
-  rtc_set_time(rtc_get_time() + 15 * SECONDS_PER_MINUTE);  // Puts us at midnight
-  activity_insights_recalculate_stats();                   // Process the midnight rollover logic
+  rtc_set_time(rtc_get_time() + 15 * SECONDS_PER_MINUTE); // Puts us at midnight
+  activity_insights_recalculate_stats();                  // Process the midnight rollover logic
 
   // Advance to 7:05am and add a sleep session from midnight to 7am
-  rtc_set_time(rtc_get_time() + 7 * SECONDS_PER_HOUR + 5 * SECONDS_PER_MINUTE);  // Puts us at 7:05
+  rtc_set_time(rtc_get_time() + 7 * SECONDS_PER_HOUR + 5 * SECONDS_PER_MINUTE); // Puts us at 7:05
   prv_add_sleep_session(0, 7);
 
   // Make sure we update the existing pin as soon as we are awake. We shouldn't add another pin
@@ -910,4 +933,192 @@ void test_activity_insights__walk_session_power_cycle(void) {
   rtc_set_time(rtc_get_time() + 2 * SECONDS_PER_HOUR);
   activity_insights_process_minute_data(rtc_get_time());
   cl_assert_equal_i(s_data.notifs_shown, 2);
+}
+
+// ---------------------------------------------------------------------------------------
+// Helpers for the sleep summary notification tests
+static void prv_use_utc_timezone(void) {
+  static TimezoneInfo tz = {
+    .tm_gmtoff = 0,
+  };
+  time_util_update_timezone(&tz);
+  prv_set_time(&s_init_time_tm);
+}
+
+// ---------------------------------------------------------------------------------------
+// Within one sleep window (9pm-to-9pm local) the summary notification fires at most once,
+// even when a later (false) sleep session extends the day's sleep bounds. The pin still
+// updates silently.
+void test_activity_insights__sleep_summary_no_renotify_same_window(void) {
+  prv_use_utc_timezone();
+  prv_set_sleep_history_avg();
+
+  // Init at Thursday 10:00am, then advance to 11:30pm - past the 9pm cutoff, so Thursday
+  // night's sleep window has started
+  activity_insights_init(rtc_get_time());
+  rtc_set_time(rtc_get_time() + 13 * SECONDS_PER_HOUR + 30 * SECONDS_PER_MINUTE);
+
+  // Sleep 10pm-11pm, awake at 11:30pm: pushes tonight's pin, no notification yet
+  prv_add_sleep_session(22, 1);
+  s_data.metric_history[ActivityMetricSleepState][0] = ActivitySleepStateAwake;
+  s_data.metric_history[ActivityMetricSleepStateSeconds][0] = 30 * SECONDS_PER_MINUTE;
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(s_data.pins_added, 1);
+  Uuid orig_id = s_last_timeline_id;
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 0);
+
+  // Advance past midnight, sleep midnight-7am, awake at 7:05am Friday - same sleep window
+  rtc_set_time(rtc_get_time() + 30 * SECONDS_PER_MINUTE);
+  activity_insights_recalculate_stats();
+  rtc_set_time(rtc_get_time() + 7 * SECONDS_PER_HOUR + 5 * SECONDS_PER_MINUTE);
+  prv_add_sleep_session(1, 7);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(s_data.pins_added, 2);
+  cl_assert(uuid_equal(&orig_id, &s_last_timeline_id));
+
+  // Be active for a couple of minutes, then pass the 30 minute post-wake mark: the summary
+  // notification fires exactly once
+  s_data.steps_per_minute = 80;
+  prv_minute_update(2);
+  rtc_set_time(rtc_get_time() + 28 * SECONDS_PER_MINUTE);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 1);
+
+  // Same window, hours later: a false sleep session 4:30pm-5:30pm extends the bounds. The
+  // pin updates in place but no second notification may fire.
+  rtc_set_time(rtc_get_time() + 10 * SECONDS_PER_HOUR + 25 * SECONDS_PER_MINUTE);
+  prv_add_sleep_session(9.5, 1);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(s_data.pins_added, 3);
+  cl_assert(uuid_equal(&orig_id, &s_last_timeline_id));
+
+  // Stay active past the 30 minute post-exit mark - still only one notification
+  prv_minute_update(2);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 1);
+}
+
+// ---------------------------------------------------------------------------------------
+// A new sleep window (past the 9pm cutoff) resets the notification guard: the next night's
+// sleep notifies again
+void test_activity_insights__sleep_summary_notify_next_window(void) {
+  prv_use_utc_timezone();
+  prv_set_sleep_history_avg();
+
+  activity_insights_init(rtc_get_time());
+  rtc_set_time(rtc_get_time() + 13 * SECONDS_PER_HOUR + 30 * SECONDS_PER_MINUTE);
+
+  s_data.metric_history[ActivityMetricSleepState][0] = ActivitySleepStateAwake;
+  s_data.metric_history[ActivityMetricSleepStateSeconds][0] = 30 * SECONDS_PER_MINUTE;
+
+  // Night 1: sleep 10pm-11pm Thursday and midnight-7am Friday, notification at 7:35am
+  prv_add_sleep_session(22, 1);
+  activity_insights_process_sleep_data(rtc_get_time());
+  rtc_set_time(rtc_get_time() + 30 * SECONDS_PER_MINUTE);
+  activity_insights_recalculate_stats();
+  rtc_set_time(rtc_get_time() + 7 * SECONDS_PER_HOUR + 5 * SECONDS_PER_MINUTE);
+  prv_add_sleep_session(1, 7);
+  activity_insights_process_sleep_data(rtc_get_time());
+  s_data.steps_per_minute = 80;
+  prv_minute_update(2);
+  rtc_set_time(rtc_get_time() + 28 * SECONDS_PER_MINUTE);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 1);
+  Uuid night1_id = s_last_timeline_id;
+
+  // Night 2: 11pm-11:30pm Friday is past the 9pm cutoff, starting a new sleep window with
+  // a new pin
+  rtc_set_time(rtc_get_time() + 16 * SECONDS_PER_HOUR + 15 * SECONDS_PER_MINUTE);
+  prv_add_sleep_session(16, 0.5);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert(!uuid_equal(&night1_id, &s_last_timeline_id));
+
+  // Sleep midnight-6:30am Saturday; the notification fires again for the new window
+  rtc_set_time(rtc_get_time() + 6 * SECONDS_PER_HOUR + 45 * SECONDS_PER_MINUTE);
+  prv_add_sleep_session(0.5, 6.5);
+  activity_insights_process_sleep_data(rtc_get_time());
+  prv_minute_update(2);
+  rtc_set_time(rtc_get_time() + 28 * SECONDS_PER_MINUTE);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 2);
+}
+
+// ---------------------------------------------------------------------------------------
+// A sleep exit in the middle of the night is not a plausible wake-up, so it must not notify.
+// Skipping must not consume the window's notification: the real morning wake-up still does.
+void test_activity_insights__sleep_summary_notification_wake_window_gate(void) {
+  prv_use_utc_timezone();
+  prv_set_sleep_history_avg();
+
+  activity_insights_init(rtc_get_time());
+  rtc_set_time(rtc_get_time() + 13 * SECONDS_PER_HOUR + 30 * SECONDS_PER_MINUTE);
+
+  s_data.metric_history[ActivityMetricSleepState][0] = ActivitySleepStateAwake;
+  s_data.metric_history[ActivityMetricSleepStateSeconds][0] = 30 * SECONDS_PER_MINUTE;
+
+  // Sleep 10pm-11pm Thursday, awake at 11:30pm
+  prv_add_sleep_session(22, 1);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(s_data.pins_added, 1);
+
+  // Sleep midnight-2am, awake at 2:05am with some activity: exit is outside the wake
+  // window, so no notification
+  rtc_set_time(rtc_get_time() + 2 * SECONDS_PER_HOUR + 35 * SECONDS_PER_MINUTE);
+  prv_add_sleep_session(1, 2);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(s_data.pins_added, 2);
+  s_data.steps_per_minute = 80;
+  prv_minute_update(2);
+  rtc_set_time(rtc_get_time() + 28 * SECONDS_PER_MINUTE);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 0);
+
+  // Back to sleep 3am-7am; the real morning wake-up still notifies
+  rtc_set_time(rtc_get_time() + 4 * SECONDS_PER_HOUR + 30 * SECONDS_PER_MINUTE);
+  prv_add_sleep_session(1, 4);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(s_data.pins_added, 3);
+  prv_minute_update(2);
+  rtc_set_time(rtc_get_time() + 28 * SECONDS_PER_MINUTE);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 1);
+}
+
+// ---------------------------------------------------------------------------------------
+// End-of-workout session notification metrics
+static void prv_push_session_notification(ActivitySessionType type, int32_t active_kcalories) {
+  ActivitySession session = {
+    .type = type,
+    .start_utc = rtc_get_time(),
+    .length_min = 30,
+    .step_data = {
+      .steps = 3000,
+      .active_kcalories = active_kcalories,
+      .resting_kcalories = 100,
+      .distance_meters = 2000,
+    },
+  };
+  activity_insights_push_activity_session_notification(rtc_get_time(), &session, 120, NULL);
+}
+
+// A manual "Workout" (Open) session should report its active calories, just like Run and Walk.
+void test_activity_insights__open_session_notification_includes_calories(void) {
+  prv_push_session_notification(ActivitySessionType_Open, 250);
+  cl_assert_equal_i(s_data.notifs_shown, 1);
+  cl_assert_equal_i(prv_get_notification_metric("Active Calories"), 250);
+}
+
+// Open workouts are often stationary, where the distance-based estimate is 0. Skip the row
+// rather than showing a misleading zero.
+void test_activity_insights__open_session_notification_omits_zero_calories(void) {
+  prv_push_session_notification(ActivitySessionType_Open, 0);
+  cl_assert_equal_i(s_data.notifs_shown, 1);
+  cl_assert_equal_i(prv_get_notification_metric("Active Calories"), -1);
+}
+
+// Regression guard: Run always reports the row, even when the value is zero.
+void test_activity_insights__run_session_notification_includes_zero_calories(void) {
+  prv_push_session_notification(ActivitySessionType_Run, 0);
+  cl_assert_equal_i(s_data.notifs_shown, 1);
+  cl_assert_equal_i(prv_get_notification_metric("Active Calories"), 0);
 }

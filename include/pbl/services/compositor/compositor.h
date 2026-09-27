@@ -6,7 +6,7 @@
 #include "applib/ui/property_animation.h"
 #include "applib/ui/window.h"
 
-//! @file kernel/services/compositor.h
+//! @file
 //! This file manages what's currently shown on the screen of your Pebble!
 //! There are two main things that are managed by the compositor...
 //!
@@ -16,13 +16,12 @@
 //! animations requested by the window stack. The compositor will also draw in
 //! the status bar when the app is in fullscreen, and the app will adjust its
 //! framebuffer's destination frame vertically. The framebuffer is simply
-//! bitblt'ed into the appropriate position whenever compositor_flush is called.
+//! bitblt'ed into the appropriate position whenever the compositor flushes
+//! to the display.
 //!
-//! @see \ref compositor_get_child_entity
-//! @see \ref compositor_set_entity_framebuffer
 //! @see \ref compositor_transition
-//! @see \ref window_stack_animation_schedule
-//! @see \ref app_emit_render_ready_event
+//! @see \ref compositor_render_app
+//! @see \ref compositor_app_render_ready
 //!
 //! <h3>Modal Window</h3>
 //! A modal window is a Window that can be rendered on top of an app without
@@ -30,7 +29,10 @@
 //! we can trust its contents. The modal window is animated up and down the
 //! screen when its pushed and popped. Since the window doesn't have a framebuffer
 //! of its own, we render it to the main framebuffer on top of everything else
-//! whenever compositor_flush is called.
+//! whenever the compositor flushes to the display.
+//!
+//! @see \ref compositor_render_modal
+//! @see \ref compositor_modal_render_ready
 //!
 
 //! Transition direction, from the current position to the next.
@@ -48,14 +50,14 @@ typedef void (*CompositorTransitionInitFunc)(Animation *animation);
 // TODO: PBL-31460 Change compositor transitions to use AnimationProgress
 // This would enable time-based bounce back transitions
 typedef void (*CompositorTransitionUpdateFunc)(GContext *ctx, Animation *animation,
-                                              uint32_t distance_normalized);
+                                               uint32_t distance_normalized);
 
 typedef void (*CompositorTransitionTeardownFunc)(Animation *animation);
 
 typedef struct CompositorTransition {
-  CompositorTransitionInitFunc init;          //!< Mandatory initialization function
-  CompositorTransitionUpdateFunc update;      //!< Mandatory update function
-  CompositorTransitionTeardownFunc teardown;  //!< Optional teardown function
+  CompositorTransitionInitFunc init;         //!< Mandatory initialization function
+  CompositorTransitionUpdateFunc update;     //!< Mandatory update function
+  CompositorTransitionTeardownFunc teardown; //!< Optional teardown function
   //! If false, modals are rendered after the update function, otherwise they are skipped
   bool skip_modal_render_after_update;
 } CompositorTransition;
@@ -96,7 +98,7 @@ void compositor_modal_render_ready(void);
 //! The app needs to copy its framebuffer to the display.
 void compositor_app_render_ready(void);
 
-FrameBuffer* compositor_get_framebuffer(void);
+FrameBuffer *compositor_get_framebuffer(void);
 
 GBitmap compositor_get_framebuffer_as_bitmap(void);
 
@@ -114,8 +116,13 @@ void compositor_set_modal_transition_offset(GPoint modal_offset);
 //! Stops an existing transition in its tracks.
 void compositor_transition_cancel(void);
 
-//! Don't allow new frames to be pushed to the compostor from either the app or the modal.
-void compositor_freeze(void);
+typedef void (*CompositorFrozenCallback)(void *data);
+
+//! Don't allow new frames to be pushed to the compositor from either the app or the modal.
+//! Callable from any task. \a callback runs on KernelMain once the freeze is in effect and no
+//! display update is in flight, at which point the framebuffer is stable until
+//! \ref compositor_unfreeze. Only one freeze may be outstanding at a time.
+void compositor_freeze(CompositorFrozenCallback callback, void *data);
 
 //! Resuming allowing new frames to be pushed to the compositor, undoes the effects of
 //! compositor_freeze.
@@ -123,10 +130,13 @@ void compositor_unfreeze(void);
 
 //! Copy app FB into the given region of the system framebuffer, scaling or centering the app
 //! framebuffer content in the destination as needed based on user preference.
-//! If the update_rect points off the edge of the screen, the region updated will be clipped as needed.
-//! If copy_relative_to_origin is false, update_rect will be copied/filled starting from the origin of the
-//! app framebuffer. If true, it is relative to the region being updated will be copied/filled.
+//! If the update_rect points off the edge of the screen, the region updated will be clipped as
+//! needed. If copy_relative_to_origin is false, update_rect will be copied/filled starting from the
+//! origin of the app framebuffer. If true, it is relative to the region being updated will be
+//! copied/filled.
 void compositor_scaled_app_fb_copy(const GRect update_rect, bool copy_relative_to_origin);
 
-//! Extended version of compositor_scaled_app_fb_copy which allows an Y offset for the source to be specified.
-void compositor_scaled_app_fb_copy_offset(const GRect update_rect, bool copy_relative_to_origin, int16_t offset_y);
+//! Extended version of compositor_scaled_app_fb_copy which allows an Y offset for the source to be
+//! specified.
+void compositor_scaled_app_fb_copy_offset(const GRect update_rect, bool copy_relative_to_origin,
+                                          int16_t offset_y);

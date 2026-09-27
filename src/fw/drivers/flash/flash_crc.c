@@ -1,11 +1,11 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/flash.h"
+#include <pbl/drivers/flash.h>
 
 #include "kernel/pbl_malloc.h"
-#include "system/logging.h"
-#include "util/crc32.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/crc32.h"
 #include "util/legacy_checksum.h"
 
 #include <stdint.h>
@@ -47,8 +47,7 @@ uint32_t flash_crc32(uint32_t flash_addr, uint32_t num_bytes) {
   return crc;
 }
 
-uint32_t flash_calculate_legacy_defective_checksum(uint32_t flash_addr,
-                                                   uint32_t num_bytes) {
+uint32_t flash_calculate_legacy_defective_checksum(uint32_t flash_addr, uint32_t num_bytes) {
   void *buffer;
   unsigned int chunk_size = prv_allocate_crc_buffer(&buffer);
 
