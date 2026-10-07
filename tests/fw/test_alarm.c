@@ -9,6 +9,7 @@
 #include "stubs_blob_db_sync_util.h"
 #include "stubs_clock.h"
 #include "stubs_pbl_malloc.h"
+#include "pbl/util/units.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //! Counter variables
@@ -75,6 +76,7 @@ void test_alarm__initialize(void) {
   timeline_item_destroy(s_last_timeline_item_added);
   s_last_timeline_item_added = NULL;
   s_last_timeline_item_removed_uuid = (Uuid){};
+  memset(s_fake_pin_records, 0, sizeof(s_fake_pin_records));
 
   fake_spi_flash_init(0, 0x1000000);
   pfs_init(false);
@@ -511,6 +513,37 @@ void test_alarm__pin_remove(void) {
   cl_assert(uuid_equal(&pin_uuid, &s_last_timeline_item_removed_uuid));
 }
 
+void test_alarm__reload_removes_untracked_future_pins(void) {
+  AlarmId id = alarm_create(&(AlarmInfo){.hour = 7, .minute = 0, .kind = ALARM_KIND_EVERYDAY});
+  AlarmStorageKey key = {.id = id, .type = ALARM_DATA_PINS};
+  Uuid tracked[3];
+  SettingsFile file;
+  cl_must_pass(settings_file_open(&file, "alarms", 1024));
+  cl_must_pass(settings_file_get(&file, &key, sizeof(key), tracked, sizeof(tracked)));
+  settings_file_close(&file);
+
+  const Uuid alarm_source = UUID_ALARMS_DATA_SOURCE;
+  const Uuid other_source = UUID_REMINDERS_DATA_SOURCE;
+  const Uuid orphan = {.byte0 = 1};
+  const Uuid past = {.byte0 = 2};
+  const Uuid unrelated = {.byte0 = 3};
+  prv_fake_pin_record_add(orphan, alarm_source, rtc_get_time() + PBL_SEC_PER_HOUR, LayoutIdAlarm);
+  prv_fake_pin_record_add(past, alarm_source, rtc_get_time() - PBL_SEC_PER_HOUR, LayoutIdAlarm);
+  prv_fake_pin_record_add(unrelated, other_source, rtc_get_time() + PBL_SEC_PER_HOUR,
+                          LayoutIdAlarm);
+  prv_fake_pin_record_add(tracked[0], alarm_source, rtc_get_time() + PBL_SEC_PER_HOUR,
+                          LayoutIdAlarm);
+
+  const int removes_before = s_num_timeline_removes;
+  alarm_handle_clock_change();
+
+  cl_assert(!s_fake_pin_records[0].exists);
+  cl_assert(s_fake_pin_records[1].exists);
+  cl_assert(s_fake_pin_records[2].exists);
+  cl_assert(!s_fake_pin_records[3].exists);
+  cl_assert_equal_i(s_num_timeline_removes - removes_before, 4);
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //! More Advanced Tests
 
@@ -552,8 +585,7 @@ void test_alarm__recurring_daily_alarm(void) {
   cl_assert_equal_i(s_num_timeline_adds, 3);
 
   alarm_get_next_enabled_alarm(&next_alarm_time);
-  cl_assert_equal_i(next_alarm_time,
-                    s_current_day + 10 * SECONDS_PER_HOUR + 30 * SECONDS_PER_MINUTE);
+  cl_assert_equal_i(next_alarm_time, s_current_day + 10 * PBL_SEC_PER_HOUR + 30 * PBL_SEC_PER_MIN);
 
   id2 = alarm_create(&(AlarmInfo){.hour = 11, .minute = 30, .kind = ALARM_KIND_EVERYDAY});
   prv_assert_alarm_config(id2, 11, 30, false, ALARM_KIND_EVERYDAY, s_every_day_schedule);
@@ -561,8 +593,7 @@ void test_alarm__recurring_daily_alarm(void) {
   cl_assert_equal_i(s_num_timeline_removes, 0);
 
   alarm_get_next_enabled_alarm(&next_alarm_time);
-  cl_assert_equal_i(next_alarm_time,
-                    s_current_day + 10 * SECONDS_PER_HOUR + 30 * SECONDS_PER_MINUTE);
+  cl_assert_equal_i(next_alarm_time, s_current_day + 10 * PBL_SEC_PER_HOUR + 30 * PBL_SEC_PER_MIN);
 
   // First alarm goes off. Second one should be up
   s_current_hour = 10;

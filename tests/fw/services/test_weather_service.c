@@ -13,7 +13,7 @@
 #include "pbl/services/weather/weather_service.h"
 #include "pbl/services/weather/weather_service_private.h"
 #include "pbl/services/weather/weather_types.h"
-#include "util/pstring.h"
+#include "pbl/util/pstring.h"
 
 // Fixture
 ////////////////////////////////////////////////////////////////
@@ -31,7 +31,6 @@
 #include "stubs_mutex.h"
 #include "stubs_hexdump.h"
 #include "stubs_passert.h"
-#include "stubs_prompt.h"
 #include "stubs_task_wdt.h"
 #include "stubs_pebble_tasks.h"
 #include "stubs_sleep.h"

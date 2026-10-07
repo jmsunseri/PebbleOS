@@ -7,16 +7,42 @@
 #include <pbl/bluetooth/sm_types.h>
 #include <pbl/btutil/sm_util.h>
 
-#define DISPLAY_BUF_LEN 160
+/**
+ * @defgroup services_bluetooth_bluetooth_persistent_storage_debug Bonding database debug
+ * @ingroup services_bluetooth
+ * @brief Shell dumps of the bonding database.
+ * @{
+ */
 
+/** @cond INTERNAL_HIDDEN */
+struct pbl_shell;
+/** @endcond */
+
+/**
+ * @brief Print BLE pairing info.
+ *
+ * @param sh Shell to print to.
+ * @param info Pairing info.
+ */
 void bluetooth_persistent_storage_debug_dump_ble_pairing_info(
-    char *display_buf, const struct pbl_bt_sm_pairing_info *info);
+    const struct pbl_shell *sh, const struct pbl_bt_sm_pairing_info *info);
 
-void bluetooth_persistent_storage_debug_dump_classic_pairing_info(char *display_buf,
-                                                                  struct pbl_bt_addr *addr,
-                                                                  char *device_name,
-                                                                  struct pbl_bt_sm_key *link_key,
-                                                                  uint8_t platform_bits);
+/**
+ * @brief Print the root keys.
+ *
+ * @param sh Shell to print to.
+ * @param irk Identity root key, may be NULL.
+ * @param erk Encryption root key, may be NULL.
+ */
+void bluetooth_persistent_storage_debug_dump_root_keys(const struct pbl_shell *sh,
+                                                       const struct pbl_bt_sm_key *irk,
+                                                       const struct pbl_bt_sm_key *erk);
 
-void bluetooth_persistent_storage_debug_dump_root_keys(struct pbl_bt_sm_key *irk,
-                                                       struct pbl_bt_sm_key *erk);
+/**
+ * @brief Print the whole bonding database.
+ *
+ * @param sh Shell to print to.
+ */
+void bluetooth_persistent_storage_dump_contents(const struct pbl_shell *sh);
+
+/** @} */

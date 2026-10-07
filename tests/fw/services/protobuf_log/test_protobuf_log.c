@@ -23,7 +23,6 @@
 #include "stubs_logging.h"
 #include "stubs_mutex.h"
 #include "stubs_pbl_malloc.h"
-#include "stubs_prompt.h"
 #include "stubs_serial.h"
 
 #include "fake_rtc.h"
@@ -31,6 +30,8 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
+#include "pbl/services/time.h"
+#include "pbl/util/units.h"
 
 #define WRITE_TO_FILE 0
 
@@ -450,7 +451,7 @@ void test_protobuf_log__initialize(void) {
 
   TimezoneInfo tz_info = {
     .tm_zone = "???",
-    .tm_gmtoff = SECONDS_PER_HOUR,
+    .tm_gmtoff = PBL_SEC_PER_HOUR,
   };
   time_util_update_timezone(&tz_info);
 
